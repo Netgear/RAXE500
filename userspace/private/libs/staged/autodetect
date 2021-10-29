@@ -1,0 +1,2 @@
+condition: ifneq ($(strip $(BUILD_BRCM_UNFWLCFG)),)
+dependson: public/libs/jsonc public/libs/bcm_util

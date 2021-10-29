@@ -1,0 +1,12 @@
+eeName: CMS
+eeVersion: 4.0
+pkgName: cms
+vendor: Broadcom Ltd.
+description: Broadcom CMS Execution Environment
+pkg-dependency:
+app-name: smd
+app-mediaType: ee_tarball
+app-tarballMngrExecutable: smd
+app-directory: ./bee
+eeToHostMsgType: 1
+beepVersion: 4.0

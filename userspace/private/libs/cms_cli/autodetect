@@ -1,0 +1,1 @@
+dependson: wlcsm public/libs/jsonc private/libs/mdm_cli private/libs/cms_core private/libs/cms_dal private/libs/cms_qdm private/libs/pmd private/libs/omcisdk pm_drv private/libs/ponsys private/libs/mdm_cli_gpon private/libs/mdm_cli_epon

@@ -1602,3 +1602,14 @@ endmenu
 source "net/netfilter/ipset/Kconfig"
 
 source "net/netfilter/ipvs/Kconfig"
+
+
+### Bitdefender connection marking
+config NETFILTER_XT_BDCONNMARK
+       tristate
+       default m
+
+config NF_CONNTRACK_BDMARK
+	bool
+	default y
+

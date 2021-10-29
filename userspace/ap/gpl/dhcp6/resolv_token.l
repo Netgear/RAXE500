@@ -287,9 +287,10 @@ update_resolver(struct dns_list *dns_list)
 				d_next = TAILQ_NEXT(d, link);
 				fprintf(dhcp6_resolv_file, "%s", 
 					in6addr2str(&d->val_addr6, 0));
-				if (d_next != NULL)
-					fprintf(dhcp6_resolv_file, " ");
-				else
+				if (d_next != NULL){
+				    fprintf(dhcp6_resolv_file, "\n");
+					fprintf(dhcp6_resolv_file, "nameserver ");
+				}else
 					fprintf(dhcp6_resolv_file, "\n");
 			}
 		}
@@ -368,7 +369,7 @@ update_resolver(struct dns_list *dns_list)
 
     /* Foxconn added start pling 09/30/2009 */
     /* Signal dnsmasq to reload resolv.conf */
-    COMMAND("killall -SIGHUP dnsmasq");
+    system("killall -SIGHUP dnsmasq");
     /* Foxconn added end pling 09/30/2009 */
 
 	return (0);

@@ -1,0 +1,1 @@
+../lib/libbr_device_detect/shared_lib_br_device_detect.h

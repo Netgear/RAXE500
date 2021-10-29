@@ -756,10 +756,98 @@ static bp_elem_t g_bcm94906ref2[] = {
   {bp_last}
 };
 
+
+static bp_elem_t g_rax220[] = {
+  {bp_cpBoardId,               .u.cp = "RAX220"},
+  {bp_ulCompatChipId,          .u.ul = 0x4908},
+
+  {bp_usGphyBaseAddress,       .u.us = BCM94908_PHY_BASE},  // use phy addressses on SF2 with base address 0x8
+  {bp_ucPhyType0,              .u.uc = BP_ENET_NO_PHY}, // Runner
+  {bp_usConfigType,            .u.us = BP_ENET_CONFIG_MMAP},
+  {bp_ucPhyAddress,            .u.uc = 0x1e},
+  {bp_ulPortMap,               .u.ul = 0x9},
+  {bp_ulPhyId0,                .u.ul = GMII_DIRECT | EXTSW_CONNECTED},
+  {bp_ulPortFlags,             .u.ul = PORT_FLAG_MGMT }, // Managment port is on switch
+  {bp_ulPhyId3,                .u.ul = BP_PHY_ID_NOT_SPECIFIED},
+  {bp_ulCrossbar,              .u.ul = 10},
+  {bp_ulCrossbarPhyId,         .u.ul = (BCM94908_PHY_BASE + 0x04) | (ADVERTISE_ALL_GMII | PHY_ADV_CFG_VALID)},
+  {bp_ucPhyType1,              .u.uc = BP_ENET_EXTERNAL_SWITCH},
+  {bp_usConfigType,            .u.us = BP_ENET_CONFIG_MMAP}, // Accessing SF2 as MMapped external switch
+  {bp_ulPortMap,               .u.ul = 0x8f},
+  {bp_ulPhyId0,                .u.ul = (BCM94908_PHY_BASE + 0x00) | (ADVERTISE_ALL_GMII | PHY_ADV_CFG_VALID)},
+  {bp_ucPhyDevName,            .u.cp = "eth4"},
+  {bp_ulPhyId1,                .u.ul = (BCM94908_PHY_BASE + 0x01) | (ADVERTISE_ALL_GMII | PHY_ADV_CFG_VALID)},
+  {bp_ucPhyDevName,            .u.cp = "eth3"},
+  {bp_ulPhyId2,                .u.ul = (BCM94908_PHY_BASE + 0x02) | (ADVERTISE_ALL_GMII | PHY_ADV_CFG_VALID)},
+  {bp_ucPhyDevName,            .u.cp = "eth2"},
+  {bp_ulPhyId3,                .u.ul = (BCM94908_PHY_BASE + 0x03) | (ADVERTISE_ALL_GMII | PHY_ADV_CFG_VALID)},
+  {bp_ucPhyDevName,            .u.cp = "eth1"},
+  {bp_ulPhyId7,                .u.ul = BP_PHY_ID_NOT_SPECIFIED},
+  {bp_ulCrossbar,              .u.ul = 9},
+  {bp_ulCrossbarPhyId,         .u.ul = 6 |  PHY_INTEGRATED_VALID | MAC_IF_SERDES | PHY_EXTERNAL},
+  {bp_ulCrossbarPhyId,         .u.ul = 0x13 | PHY_EXTERNAL | PHY_TYPE_CL45GPHY},
+  {bp_ulPortFlags,             .u.ul = PORT_FLAG_SWAP_PAIR},
+  {bp_usGpioPhyReset,          .u.us = BP_GPIO_30_AL},
+
+  {bp_usMiiMdc,                .u.us = BP_GPIO_48_AH},
+  {bp_usMiiMdio,               .u.us = BP_GPIO_49_AH},
+  
+  {bp_usGpioI2cSda,            .u.us = BP_GPIO_18_AH }, 
+  {bp_usGpioI2cScl,            .u.us = BP_GPIO_19_AH },
+
+  {bp_usUsbPwrOn0,             .u.us = BP_GPIO_64_AH},
+  {bp_usUsbPwrFlt0,            .u.us = BP_GPIO_63_AL},
+  {bp_usUsbPwrOn1,             .u.us = BP_GPIO_67_AH},
+  {bp_usUsbPwrFlt1,            .u.us = BP_GPIO_66_AL},
+
+  {bp_last}
+};
+/* Board with 2.5GPHY connected to LAN port */
+static bp_elem_t g_ax11000[] = {
+  {bp_cpBoardId,               .u.cp = "RAX200"},
+  {bp_ulCompatChipId,          .u.ul = 0x4908},
+  {bp_usGphyBaseAddress,       .u.us = BCM94908_PHY_BASE},  // use phy addressses on SF2 with base address 0x8
+  {bp_ucPhyType0,              .u.uc = BP_ENET_NO_PHY}, // Runner
+  {bp_usConfigType,            .u.us = BP_ENET_CONFIG_MMAP},
+  {bp_ucPhyAddress,            .u.uc = 0x1f},
+  {bp_ulPortMap,               .u.ul = 0x9},
+  {bp_ulPhyId0,                .u.ul = GMII_DIRECT | EXTSW_CONNECTED},
+  {bp_ulPortFlags,             .u.ul = PORT_FLAG_MGMT }, // Managment port is on switch
+  {bp_ulPhyId3,                .u.ul = BP_PHY_ID_NOT_SPECIFIED},
+  {bp_ulCrossbar,              .u.ul = 10},
+  {bp_ulCrossbarPhyId,         .u.ul = (BCM94908_PHY_BASE + 0x04) | (ADVERTISE_ALL_GMII | PHY_ADV_CFG_VALID)},
+  /* use the WAN LED from runner */
+  {bp_ucPhyType1,              .u.uc = BP_ENET_EXTERNAL_SWITCH},
+  {bp_usConfigType,            .u.us = BP_ENET_CONFIG_MMAP}, // Accessing SF2 as MMapped external switch
+  {bp_ulPortMap,               .u.ul = 0x8f},
+  {bp_ulPhyId0,                .u.ul = (BCM94908_PHY_BASE + 0x00) | (ADVERTISE_ALL_GMII | PHY_ADV_CFG_VALID)},
+  {bp_ucPhyDevName,            .u.cp = "eth4"},
+  {bp_ulPhyId1,                .u.ul = (BCM94908_PHY_BASE + 0x01) | (ADVERTISE_ALL_GMII | PHY_ADV_CFG_VALID)},
+  {bp_ucPhyDevName,            .u.cp = "eth3"},
+  {bp_ulPhyId2,                .u.ul = (BCM94908_PHY_BASE + 0x02) | (ADVERTISE_ALL_GMII | PHY_ADV_CFG_VALID)},
+  {bp_ucPhyDevName,            .u.cp = "eth2"},
+  {bp_ulPhyId3,                .u.ul = (BCM94908_PHY_BASE + 0x03) | (ADVERTISE_ALL_GMII | PHY_ADV_CFG_VALID)},
+  {bp_ucPhyDevName,            .u.cp = "eth1"},
+  {bp_ulPhyId7,                .u.ul = BP_PHY_ID_NOT_SPECIFIED},
+  {bp_ulCrossbar,              .u.ul = 9},
+  {bp_ulCrossbarPhyId,         .u.ul = 6 |  PHY_INTEGRATED_VALID | MAC_IF_SERDES | PHY_EXTERNAL},
+  {bp_ulCrossbarPhyId,         .u.ul = 0x1f | PHY_EXTERNAL | PHY_TYPE_CL45GPHY},
+  {bp_ulPortFlags,             .u.ul = PORT_FLAG_SWAP_PAIR},
+  {bp_usGpioPhyReset,          .u.us = BP_GPIO_30_AL},
+  {bp_usGpioI2cSda,            .u.us = BP_GPIO_18_AH },
+  {bp_usGpioI2cScl,            .u.us = BP_GPIO_19_AH },
+  {bp_usUsbPwrOn0,             .u.us = BP_GPIO_64_AH},
+  {bp_usUsbPwrFlt0,            .u.us = BP_GPIO_63_AL},
+  {bp_usUsbPwrOn1,             .u.us = BP_GPIO_67_AH},
+  {bp_usUsbPwrFlt1,            .u.us = BP_GPIO_66_AL},
+  {bp_usGpioReserved,          .u.us = BP_GPIO_31_AH},
+  {bp_last}
+};
+
 bp_elem_t * g_BoardParms[] = {
   g_bcm94908sv, g_bcm94908dvt, g_bcm94908dvt_sfpwan, g_bcm94908ref, g_bcm94908ref_extphy,
   g_bcm94906ref, g_bcm94906ref_fake, g_bcm94908ref_wan2p5g, g_bcm94908ref_wan2p5g_n_g, g_bcm962118ref, g_bcm962116ref,
   g_bcm949408eap_extphy, g_bcm94908tbrhx, g_bcm94908tbrhx_extphy, g_bcm94908tbrhx_wan2p5g, 
-  g_bcm94906ref2, g_bcm949408eap_extphy_54991, g_bcm94908eap_4dax, 0
+  g_bcm94906ref2, g_bcm949408eap_extphy_54991, g_bcm94908eap_4dax, g_rax220, g_ax11000, 0
 };
 

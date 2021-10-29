@@ -237,6 +237,12 @@ config IP_NF_FILTER
 
 	  To compile it as a module, choose M here.  If unsure, say N.
 
+config IP_NF_AUTOFW
+    tristate "Automatic port forwarding (autofw) target support"
+
+config IP_NF_TARGET_TRIGGER
+    tristate "port triggering match support"
+
 config IP_NF_TARGET_REJECT
 	tristate "REJECT target support"
 	depends on IP_NF_FILTER

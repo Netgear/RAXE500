@@ -65,6 +65,13 @@ struct nf_conntrack_net {
 #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
 #include <net/netfilter/ipv6/nf_conntrack_ipv6.h>
 
+/* FXCN Add */
+#ifdef CONFIG_NETFILTER_DEBUG
+#define NF_CT_ASSERT(x)		WARN_ON(!(x))
+#else
+#define NF_CT_ASSERT(x)
+#endif
+
 struct nf_conn {
 	/* Usage count in here is 1 for hash table, 1 per skb,
 	 * plus 1 for any connection(s) we are `master' for
@@ -111,6 +118,10 @@ struct nf_conn {
 	u_int32_t mark;
 #endif
 
+#if defined(CONFIG_NF_CONNTRACK_BDMARK)
+       u_int32_t bdmark;
+#endif
+
 #ifdef CONFIG_NF_CONNTRACK_SECMARK
 	u_int32_t secmark;
 #endif
@@ -120,6 +131,11 @@ struct nf_conn {
 
 	/* Storage reserved for other modules, must be the last member */
 	union nf_conntrack_proto proto;
+
+#if 1
+	/* 2015/07/16 Mos, Add one by one option for portforwading in different port range */
+    __u16 ext_port_start;
+#endif
 };
 
 static inline struct nf_conn *

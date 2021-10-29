@@ -1404,6 +1404,9 @@ __nf_conntrack_alloc(struct net *net,
 #if defined(CONFIG_BCM_KF_NETFILTER)
 	bcm_nf_ct_alloc(ct, skb);
 #endif
+#if defined(CONFIG_NF_CONNTRACK_BDMARK)
+	ct->bdmark = 0;
+#endif
 	/* Because we use RCU lookups, we set ct_general.use to zero before
 	 * this is inserted in any list.
 	 */

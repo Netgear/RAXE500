@@ -2019,6 +2019,10 @@ again:
 		if (!skb2)
 			goto out_unlock;
 
+#if defined(CONFIG_BCM_KF_BLOG) && defined(CONFIG_BLOG)
+		if (skb2->blog_p)
+			blog_xfer(skb, skb2);    /* CONFIG_BLOG: transfers blog ownership */
+#endif
 		net_timestamp_set(skb2);
 
 		/* skb->nh should be correctly

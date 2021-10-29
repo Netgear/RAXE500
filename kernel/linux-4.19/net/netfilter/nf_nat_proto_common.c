@@ -85,6 +85,19 @@ void nf_nat_l4proto_unique_tuple(const struct nf_nat_l3proto *l3proto,
 		off = prandom_u32();
 	} else if (range->flags & NF_NAT_RANGE_PROTO_OFFSET) {
 		off = (ntohs(*portptr) - ntohs(range->base_proto.all));
+#if 1
+	/* FXCN Add */
+	} else if (range->flags & NF_NAT_RANGE_PROTO_ONEBYONE) {
+		// In one by one rule, offset = (destination port) - (external start) = external port delta
+		// ct->ext_port_start will be assign in  tcp/udp match function (xt_tcpudp.c)
+		printk("portforwarding one by one! src.port=%d, dst.port=%d, ct->ext_port_start=%d\n",
+			ntohs(tuple->src.u.all), ntohs(tuple->dst.u.all), ct->ext_port_start);
+		if (ntohs(tuple->dst.u.all) > ct->ext_port_start) {
+			off =  ntohs(tuple->dst.u.all) - ct->ext_port_start;
+		}  else {
+			off = 0;
+		}
+#endif
 	} else {
 		off = *rover;
 	}
@@ -93,9 +106,15 @@ void nf_nat_l4proto_unique_tuple(const struct nf_nat_l3proto *l3proto,
 		*portptr = htons(min + off % range_size);
 		if (++i != range_size && nf_nat_used_tuple(tuple, ct))
 			continue;
+#if 1
+		/* FXCN Add */
+		if (!(range->flags & (NF_NAT_RANGE_PROTO_RANDOM_ALL | NF_NAT_RANGE_PROTO_OFFSET)) && !(range->flags & NF_NAT_RANGE_PROTO_ONEBYONE))
+			*rover = off;
+#else	
 		if (!(range->flags & (NF_NAT_RANGE_PROTO_RANDOM_ALL|
 					NF_NAT_RANGE_PROTO_OFFSET)))
 			*rover = off;
+#endif
 		return;
 	}
 }

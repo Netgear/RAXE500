@@ -1,0 +1,24 @@
+{
+  "isPrivileged": 2,
+  "runLevel": -1,
+  "bus":
+  { 
+    "wellknown-name": "com.broadcom.smd"
+  },
+  "linux":
+  {
+    "resources":
+    {
+      "cpu": {
+          "quota": 90,
+          "realtimeRuntime": 50000,
+          "cpus": "0-1",
+      },
+      "memory": {
+          "limit":128000000,
+      },
+      "flash-size": "24MB"
+    },
+  },
+}
+

@@ -739,6 +739,21 @@ pincontroller-functions {
             function = <7>;
         };
 
+        gpio_pin_52: gpio_52_pinmux {
+            pins = <52>;
+            function = <4>;
+        };
+
+        gpio_pin_55: gpio_55_pinmux {
+            pins = <55>;
+            function = <4>;
+        };
+
+        gpio_pin_56: gpio_56_pinmux {
+            pins = <56>;
+            function = <4>;
+        };
+
         hs_uart_cts_pin_10: hs_uart_cts_pinmux {
             pins = <10>;
             function = <0>;
@@ -777,6 +792,11 @@ pincontroller-functions {
         i2s_sdata_pin_29: i2s_sdata_pinmux {
             pins = <29>;
             function = <0>;
+        };
+
+        led_gpio_pin_54: led_gpio_54_pinmux {
+            pins = <54>;
+            function = <4>;
         };
 
         mii_col_pin_80: mii_col_pinmux {

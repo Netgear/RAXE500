@@ -67,7 +67,7 @@ SUBDIRS +=tcpdump-4.4.0
 endif
 
 ifeq ($(CONFIG_RIP),y)
-SUBDIRS	+= zebra
+#SUBDIRS	+= zebra
 endif
 
 ifeq ($(CONFIG_PPTP),y)

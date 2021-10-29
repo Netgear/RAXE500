@@ -39,8 +39,8 @@ all_postcheck_no_buildimage: profile_saved_check sanity_check rdp_link\
 
 acos:
 	./acos_link.sh $(PROFILE)
-	$(MAKE) -C $(BUILD_DIR)/userspace/ap/acos
-	$(MAKE) -C $(BUILD_DIR)/userspace/ap/acos install
+#	$(MAKE) -C $(BUILD_DIR)/userspace/ap/acos
+#	$(MAKE) -C $(BUILD_DIR)/userspace/ap/acos install
 
 gpl:
 	./gpl_link.sh $(PROFILE)
@@ -844,13 +844,13 @@ ifneq ($(strip $(BRCM_PERMIT_STDCPP)),)
 		false;                                                     \
 	fi
 endif
-ifeq ($(BUILD_DISABLE_EXEC_STACK),y)
-ifneq ($(execstack_exec),)
+#ifeq ($(BUILD_DISABLE_EXEC_STACK),y)
+#ifneq ($(execstack_exec),)
 	@echo no need to build execstack $(execstack_exec)
-else
-	make -C $(HOSTTOOLS_DIR) build_execstack;
-endif
-endif
+#else
+#	make -C $(HOSTTOOLS_DIR) build_execstack;
+#endif
+#endif
 	cd $(TARGETS_DIR); ./buildFS;
 
 ################
@@ -948,10 +948,12 @@ clean1: bcmdrivers_clean data-model_clean dynamic_cfe_clean optee_clean atf_clea
 	rm -f $(HOST_PERLARCH_COOKIE)
 	rm -f bcmdrivers/broadcom/char/adsl/impl1/adsl_phy.bin
 	rm -f bcmdrivers/broadcom/char/adsl/impl1/adslcore*/AdslPhyBld
+ifeq ($(PROFILE),RAX220)
 	@echo "====start copy prebuild RAX220 to targets/RAX220 folder===="
 	rm -rf $(BUILD_DIR)/targets/RAX220
 	cp -rf $(BUILD_DIR)/RAX220 $(BUILD_DIR)/targets/
 	@echo "====end copy probuild RAX220===="
+endif
 
 uboot_clean:
 	$(MAKE) -f build/make.uboot clean

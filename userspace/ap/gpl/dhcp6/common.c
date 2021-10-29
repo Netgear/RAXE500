@@ -1330,7 +1330,7 @@ dhcp6_get_options(p, ep, optinfo, msgtype, state, send_flags)
             /* Save SIP server to NVRAM */
             if (dhcp6_mode == DHCP6_MODE_CLIENT && strlen(buf)) {
                 sprintf(command, "nvram set ipv6_sip_servers=\"%s\"", buf);
-                COMMAND(command);
+                system(command);
 				
 				printf("%s,%d,command=%s\n", __func__,__LINE__,command);
                 has_sip = 1;    // Foxconn added pling 10/04/2010
@@ -1366,7 +1366,7 @@ dhcp6_get_options(p, ep, optinfo, msgtype, state, send_flags)
             /* Save NTP server to NVRAM */
             if (dhcp6_mode == DHCP6_MODE_CLIENT && strlen(buf)) {
                 sprintf(command, "nvram set ipv6_ntp_servers=\"%s\"", buf);
-                COMMAND(command);
+                system(command);
 				
 				printf("%s,%d,command=%s\n", __func__,__LINE__,command);
                 has_ntp = 1;    // Foxconn added pling 10/04/2010

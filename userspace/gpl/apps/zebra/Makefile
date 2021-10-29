@@ -8,7 +8,7 @@ TOOLCHAIN_PREFIX=$(ARCH)-none-linux
 endif
 
 BCM_BLT32_FLAGS += --localstatedir=/var/run --sysconfdir=/etc
-BCM_BLT32_FLAGS += --disable-vtysh --disable-doc --disable-bgpd --disable-ripngd
+BCM_BLT32_FLAGS += --disable-vtysh --disable-doc --disable-bgpd --enable-ripngd
 BCM_BLT32_FLAGS += --disable-ospfd --disable-ospf6d --disable-nhrpd --disable-watchquagga
 BCM_BLT32_FLAGS += --disable-isisd --disable-pimd --disable-bgp-announce --disable-ospfclient
 BCM_BLT32_FLAGS += --enable-user=admin --enable-group=root

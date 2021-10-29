@@ -1,0 +1,63 @@
+#
+# Copyright (C) 2020, Broadcom. All Rights Reserved.
+#
+# Permission to use, copy, modify, and/or distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+# SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+# OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+# CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+#
+#
+# <<Broadcom-WL-IPTag/Open:>>
+#
+# $Id: Makefile.nat 692019 2017-03-24 19:24:28Z $
+#
+
+OBJPATH = obj
+
+CFLAGS += -I$(SRCBASE)/include ${WLAN_StdIncPathA} -I$(SRCBASE)/../components/shared -I$(SRCBASE)/../components/wlioctl/include -I$(SRCBASE)/../components/proto/include -I$(SRCBASE)/common/include -I$(SRCBASE_ROUTER)/shared
+CFLAGS += -g -DNDEBUG -Wall -Wunused
+
+LDFLAGS = -L$(SRCBASE_ROUTER)/netconf -L$(INSTALLDIR)/netconf/usr/lib \
+	-L$(SRCBASE_ROUTER)/nvram -L$(INSTALLDIR)/nvram/usr/lib \
+	-lnetconf -lnvram
+LDFLAGS += $(EXTRA_LDFLAGS)
+
+SRCFILES = igdnat.c
+
+OBJFILES := $(patsubst %.c,$(OBJPATH)/%.o,$(SRCFILES))
+
+#
+# objects
+#
+TARGET = igdnat
+
+all : $(OBJPATH) $(TARGET)
+
+$(OBJPATH):
+	mkdir -p $(OBJPATH)
+
+$(OBJPATH)/%.o:	%.c | $(OBJPATH)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ -c $<
+
+$(TARGET) :: $(OBJFILES)
+	$(CC) -o $@ $(OBJFILES) $(LDFLAGS)
+
+clean:
+	rm -rf $(OBJPATH)
+	rm -f $(TARGET)
+
+install:
+	install -d $(INSTALLDIR)/usr/sbin
+	install -m 755 $(TARGET) $(INSTALLDIR)/usr/sbin/$(TARGET)
+	$(STRIP) $(INSTALLDIR)/usr/sbin/$(TARGET)
+
+FORCE:
+
+.PHONY: FORCE clean install

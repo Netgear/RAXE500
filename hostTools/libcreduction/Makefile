@@ -108,10 +108,14 @@ else
 endif
 
 # Remove dynamic linker from list of libs
+# Foxconn added 
+SHLIBS32_WHITELIST := /opt/bitdefender/lib/libbdbroker.so
+SHLIBS32_WHITELIST += /home/pchu/dal/v1.3.57/build/extlibs/bdagent/BCM63xx/2.2.59-13~d8abeda60/opt/bitdefender/lib/libbdbroker.so
 SHLIBS32 := $(filter-out $(LINKER32),$(SHLIBS32))
 
 # Add extra libs
 SHLIBS32 += $(EXTRALIBS32)
+SHLIBS32 := $(filter-out $(SHLIBS32_WHITELIST),$(SHLIBS32))
 
 # Remove all shared libs which are already present in INSTALL_DIR/lib
 EXP_TOOLCHAIN_LIBS32 := $(shell for j in $(SHLIBS32); do if test -n "$$(find -L $(INSTALL_DIR)/lib/$(INSTALL_SUFFIX32) -name $$j)" \

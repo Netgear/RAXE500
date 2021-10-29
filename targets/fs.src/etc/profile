@@ -4,5 +4,7 @@ export PATH=/home/bin:/home/scripts:/bin:/sbin:/usr/bin:/usr/local/jamvm/bin:/op
 export LD_LIBRARY_PATH=/lib:/lib/gpl:/lib64/gpl:/lib64:/usr/lib:/usr/lib64
 export OPENSSL_CONF=/etc/ssl/openssl.cnf
 
+# Restrict core file size to 5MB (1 block is 512 bytes)
+ulimit -c 10240
 
 

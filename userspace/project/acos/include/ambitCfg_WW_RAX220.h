@@ -47,9 +47,9 @@
 
 /*formal version control*/
 #define AMBIT_HARDWARE_VERSION     "U12H449T00"
-#define AMBIT_SOFTWARE_VERSION     "V1.0.0.48"
+#define AMBIT_SOFTWARE_VERSION     "V1.0.1.52"
 #define AMBIT_UI_VERSION           "2.0.34"
-#define STRING_TBL_VERSION         "1.0.0.48_2.1.46.1"
+#define STRING_TBL_VERSION         "1.0.1.52_2.1.46.1"
 
 #define AMBIT_PRODUCT_NAME          "RAXE500"
 //#define AMBIT_PRODUCT_ALIAS         "Nighthawk"

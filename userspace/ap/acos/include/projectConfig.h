@@ -1,0 +1,1 @@
+/home/kate/Netgear/RAX220/GPL/RAXE500_V1.0.1.52_GPL_release/bcm963xx/userspace/project/acos/include/projectConfig_RAX220.h

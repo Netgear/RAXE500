@@ -1,0 +1,73 @@
+/*
+ * CSS implementation for cpu load demo page
+ *
+ * $ Copyright Open Broadcom Corporation $
+ *
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: cpuload_demo.css 746567 2018-02-13 15:48:01Z pj888946 $
+ */
+
+*{
+	margin:0em;
+	padding:0em;
+	font-family:arial, sans-serif;
+}
+.edge {
+	background-image:url(repeat_edge_new.gif);
+	line-height:0px;
+}
+.logotable{
+	border:0px;
+	border-collapse:collapse;
+	border-spacing:0px;
+	padding:0;
+	margin:0;
+	width:100%;
+}
+
+.logotable td{
+	padding:0px;
+}
+.maindiv {
+	width:98%;
+}
+
+#main_div{
+	width:99.9%;
+	margin-bottom:1em;
+	text-align:left;
+}
+
+.commonbdr {
+	border: 0.2em solid #006699;
+}
+
+.topmargin {
+	margin-top:5em;
+}
+
+.leftmargin {
+	margin-left:5em;
+}
+
+.rightmargin {
+	margin-right:5em;
+}
+
+.rightmargin-large {
+	margin-right:25em;
+}
+.leftmargin-large {
+	margin-left:12em;
+}
+.actbtn {
+	margin-left:1em;
+	margin-right:2em;
+	padding-left:0.5em;
+	padding-right:0.5em;
+}
+
+
+

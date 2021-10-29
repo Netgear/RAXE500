@@ -1,0 +1,22 @@
+=head2 Wed Mar 17 09:21:07 2021: C<Module> L<Convert::Binary::C|Convert::Binary::C>
+
+=over 4
+
+=item *
+
+C<installed into: /home/kate/Netgear/RAX220/GPL/RAXE500_V1.0.1.52_GPL_release/bcm963xx/hostTools/local_install/Perl>
+
+=item *
+
+C<LINKTYPE: dynamic>
+
+=item *
+
+C<VERSION: 0.77>
+
+=item *
+
+C<EXE_FILES: bin/ccconfig>
+
+=back
+

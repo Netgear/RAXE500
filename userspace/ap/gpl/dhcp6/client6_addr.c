@@ -145,7 +145,7 @@ int dhcp6c_dad_callback(void)
      */
     if (strlen(callback_cmd))
     {
-        COMMAND(callback_cmd);
+        system(callback_cmd);
         memset(callback_cmd, 0, sizeof(callback_cmd));
     }
     return 0;
@@ -418,7 +418,7 @@ dhcp6_remove_lease(struct dhcp6_lease *sp)
 	 */
 	char command[256];
 	sprintf(command, "dhcp6c_down %s", get_dhcpc_dev_name());
-	COMMAND(command);
+	system(command);
 	/* Foxconn added end pling 11/30/2010 */
 
 	return 0;
@@ -575,7 +575,7 @@ dhcp6_update_iaidaddr(struct dhcp6_optinfo *optinfo, int flag)
     /* Foxconn added start pling 08/15/2009 */
     /* Call our callback function to do something useful */
     if (strlen(command))
-        COMMAND(command);
+        system(command);
     /* Foxconn added start pling 08/15/2009 */
 
 	return 0;

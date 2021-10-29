@@ -165,7 +165,8 @@ static void bcm_ethsw_open(struct udevice *dev)
 
     	/* Enable MAC port Tx/Rx for CFE local traffic */
     	printk ("Enable Switch MAC Port Rx/Tx, set PBVLAN to FAN out, set switch to NO-STP. offset_jump = %d\n", offset_jump);
-    	for( i = 0; i < BP_MAX_SWITCH_PORTS; i++ )
+        //for( i = 0; i < BP_MAX_SWITCH_PORTS; i++ )
+        for( i = 0; i < 4; i++ )  /* Foxconn modified, not to enable WAN port at uboot. */
     	{
         	/* Set Port VLAN to allow CPU traffic only */
         	ETHSW_CORE->port_vlan_ctrl[offset_jump*i] = PBMAP_MIPS;

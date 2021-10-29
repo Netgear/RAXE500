@@ -369,7 +369,12 @@ get_unique_tuple(struct nf_conntrack_tuple *tuple,
 	 */
 
 	/* Only bother mapping if it's not already in range and unique */
+#if 1
+	/* FXCN Add */
+	if (!(range->flags & NF_NAT_RANGE_PROTO_RANDOM_ALL) && !(range->flags & NF_NAT_RANGE_PROTO_ONEBYONE)) {
+#else
 	if (!(range->flags & NF_NAT_RANGE_PROTO_RANDOM_ALL)) {
+#endif
 		if (range->flags & NF_NAT_RANGE_PROTO_SPECIFIED) {
 			if (!(range->flags & NF_NAT_RANGE_PROTO_OFFSET) &&
 			    l4proto->in_range(tuple, maniptype,

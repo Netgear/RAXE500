@@ -1,0 +1,3 @@
+condition: ifneq ($(and $(strip $(BUILD_BRCM_UNFWLCFG)),$(or $(strip $(BUILD_BRCM_CMS)),$(BUILD_BRCM_BDK))),)
+dependson: private/libs/cms_core private/libs/cms_qdm private/libs/staged public/libs/cms_util public/libs/cms_msg public/libs/jsonc
+

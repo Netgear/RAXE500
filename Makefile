@@ -20,24 +20,21 @@ export FXCN_FW_FEATURES
 default:
 ifeq ($(FXCN_FW_FEATURES),1) 
 ifeq ($(PROFILE),RAX220)
-	rm -rf RAX220/fs.install RAX220/modules;
-	rm -rf targets/RAX220/fs.install targets/RAX220/modules;
-	tar zxvf ori_RAXE500_prebuild.tar.gz -C targets/RAX220/
-	tar zxvf ori_RAXE500_prebuild.tar.gz -C RAX220/
+	tar zxvf ori_RAX220_prebuild.tar.gz -C targets/RAX220/
+	tar zxvf ori_RAX220_prebuild.tar.gz -C RAX220/
 endif
-	./sdk_link.sh $(PROFILE)
+#	./sdk_link.sh $(PROFILE)
 endif
 	$(MAKE) -f build/Makefile -j$(ACTUAL_MAX_JOBS) $(MAKEOVERRIDES) $(MAKECMDGOALS)
 ifeq ($(FXCN_FW_FEATURES),1) 
 	$(MAKE) -f build/Makefile -j$(ACTUAL_MAX_JOBS) pre_buildimage 
 	$(MAKE) -f build/Makefile gpl 
-#	$(MAKE) -f build/Makefile acos 
-	$(MAKE) -f build/Makefile -j$(ACTUAL_MAX_JOBS) just_buildimage 
+	$(MAKE) -f build/Makefile acos 
 ifeq ($(PROFILE),RAX220)
 	rm -rf targets/RAX220/fs.install targets/RAX220/modules;
-	tar zxvf ori_RAXE500_prebuild.tar.gz  -C targets/RAX220/
+	tar zxvf ori_RAX220_prebuild.tar.gz  -C targets/RAX220/
 endif
-#	$(MAKE) -f build/Makefile -j$(ACTUAL_MAX_JOBS) buildimage 
+	$(MAKE) -f build/Makefile -j$(ACTUAL_MAX_JOBS) just_buildimage 
 endif #FXCN_FW_FEATURES
 
 $(MAKECMDGOALS):

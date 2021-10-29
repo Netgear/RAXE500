@@ -28,6 +28,7 @@ typedef enum {
     PB_BUTTON_0,
     PB_BUTTON_1,
     PB_BUTTON_2,
+    PB_BUTTON_3,
     PB_BUTTON_MAX
 } PB_BUTTON_ID;
 
