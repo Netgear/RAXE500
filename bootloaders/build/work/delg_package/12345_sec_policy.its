@@ -1,0 +1,51 @@
+/dts-v1/;
+/ {
+security_policy {
+	delegate_id = <12345>;
+	min_tpl_compatibility = <0x2>;
+	key-aes {
+		description = "Encrypted AES key - Mandatory Node";
+		data = < 0xD9B06EEC 0xF0CCFA82 0xE629721 0x88970D9C 0x92F973B2 0x2B5FA3EA 0x2759D8FE 0x66590FD 0x3CDAF958 0xC6FBC5A7 0x19CD2C77 0xCE9DBD3F>;
+		algo = "aes-cbc-128";
+	};
+	sec_restriction {
+		description = "Security Restrictions xxx - Optional Node";
+		sw_restriction {
+			status = "disabled";
+			required_images {
+				image1 {
+					img_name = "armtf";
+					load = <0x0>;
+					start = <0x0>;
+					sha256 = <0x0>;
+				};
+				image2 {
+					imag_name = "optee";
+					load = <0x0>;
+					sha256 = <0x0>;
+				};
+			};
+		};
+		sec_exports {
+			status = "enabled";
+			allowed_exports = "SEC_ITEM_KEY_DEV_SPECIFIC,SEC_ITEM_SER_NUM";
+		};
+		hw_state {
+ 			// all    - Blocks access for all masters 
+			// none   - Unlocks access for all masters
+			// nonsec - Blocks access for nonsecure masters only
+			// prov   - unlock access for nonsecure provisioning by 
+			//          locking populated data only (sotp)
+			sotp-lock = "prov";
+			rng-lock = "none";
+		};
+	};
+	anti-rollback {
+		status = "disabled";
+		description = "Anti-rollback update - Optional Node";
+		new_antirollback = <10>;
+		antirollback_limit = <2>;
+	};
+};
+
+};

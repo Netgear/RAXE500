@@ -1,0 +1,3 @@
+dependson: public/libs/gst-plugins-base
+dependson: public/libs/gst-plugins-good
+

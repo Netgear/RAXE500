@@ -1,0 +1,3 @@
+dependson: public/libs/bcm_flashutil public/libs/bcm_boardctl 
+condition: ifneq ($(or $(strip $(BUILD_BOOT_BLOCK_HOUSEKEEPING))),)
+

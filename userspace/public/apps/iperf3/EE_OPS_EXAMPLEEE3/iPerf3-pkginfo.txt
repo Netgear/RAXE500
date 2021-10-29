@@ -1,0 +1,11 @@
+eeName: ExampleEE3
+eeVersion: 1.0
+pkgName: iPerf3
+vendor: NLANR/DAST
+description: Network Bandwidth Measurement Tool iPerf v3.1.4
+version: 1.0
+pkg-dependency:
+app-name: iPerf3
+app-mediaType: tarball
+app-tarballMngrExecutable: iPerf3
+app-directory: .

@@ -1,0 +1,11 @@
+eeName: BEEP_HOSTEE
+eeVersion: 5.0
+pkgName: iPerf2
+vendor: NLANR/DAST
+description: Network Bandwidth Measurement Tool iPerf v2.0.9
+version: 1.2
+pkg-dependency:
+app-name: iPerf2
+app-mediaType: tarball
+app-tarballMngrExecutable: iPerf2
+app-directory: .

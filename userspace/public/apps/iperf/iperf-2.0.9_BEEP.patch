@@ -1,0 +1,597 @@
+diff -urp iperf-2.0.9_orig/include/headers.h iperf-2.0.9/include/headers.h
+--- iperf-2.0.9_orig/include/headers.h	2016-06-07 02:48:21.000000000 +0800
++++ iperf-2.0.9/include/headers.h	2017-06-06 08:22:23.444998339 +0800
+@@ -214,6 +214,13 @@ typedef uint64_t max_size_t;
+     #define SHUT_RDWR 2
+ #endif // SHUT_RD
+ 
++//#define BCM_DBG
++#ifdef BCM_DBG
++#define DBG(x) printf x
++#else
++#define DBG(x)
++#endif
++
+ #endif /* HEADERS_H */
+ 
+ 
+--- iperf-2.0.9_orig/src/Settings.cpp	2016-06-07 02:48:21.000000000 +0800
++++ iperf-2.0.9/src/Settings.cpp	2017-06-06 11:04:40.171066689 +0800
+@@ -71,6 +71,8 @@
+ 
+ #include "gnu_getopt.h"
+ 
++extern int isRunning;
++
+ void Settings_Interpret( char option, const char *optarg, thread_Settings *mExtSettings );
+ 
+ /* -------------------------------------------------------------------
+@@ -390,7 +392,8 @@ void Settings_Interpret( char option, co
+         case 'h': // print help and exit
+ 	    fprintf(stderr, "%s", usage_long1);
+             fprintf(stderr, "%s", usage_long2);
+-            exit(1);
++            isRunning = 0;
++            //exit(1);
+             break;
+ 
+         case 'i': // specify interval between periodic bw reports
+@@ -501,7 +504,8 @@ void Settings_Interpret( char option, co
+ 
+         case 'v': // print version and exit
+ 	    fprintf( stderr, "%s", version );
+-            exit(1);
++            isRunning = 0;
++            //exit(1);
+             break;
+ 
+         case 'w': // TCP window size (socket buffer size)
+--- iperf-2.0.9_orig/src/main.cpp	2016-06-07 02:48:21.000000000 +0800
++++ iperf-2.0.9/src/main.cpp	2017-06-20 14:03:27.418771938 +0800
+@@ -75,11 +75,50 @@
+ #include "service.h"
+ #endif 
+ 
++#include <gio/gio.h>
++#include <glib/gprintf.h>
++#include <glib-unix.h>
++#include "beep.h"
++
++#define BCM_UNIQUE_NS          "com.broadcom."
++#define BCM_UNIQUE_NS_PATH     "/com/broadcom/"
++#define IPERF_BUS_NAME BCM_UNIQUE_NS"iperf"
++#define IPERF_OBJ_PATH BCM_UNIQUE_NS_PATH"iperf"
++#define IPERF_INTERFACE BCM_UNIQUE_NS"iperf"
++#define IPERF_INTERFACE_XML_STRING  "<interface name='"IPERF_INTERFACE"'>"
++
++int _argc;
++char **_argv = NULL;
++guint owner_id = 0;
++int isRunning = 1;
++static int isClientOrServerRunning = 0;
++GMainLoop *main_loop = NULL;
++GDBusConnection *iperf_connection = NULL;
++static GThread *event_thread = NULL;
++static GThread *service_thread = NULL;
++static GMainLoop *event_thread_loop = NULL;
++static GMainLoop *service_thread_loop = NULL;
++static int default_arg_mode = 1;
++
++/* Introspection data for the service we are exporting */
++static const gchar introspection_xml[] =
++"<node>"
++IPERF_INTERFACE_XML_STRING   
++"    <method name='RunWithArgs'>"
++"      <arg direction='in' type='s' name='args'/>"
++"    </method>"
++"  </interface>"
++"</node>";
++
++static guint registration_id = 0;
++static GDBusNodeInfo   *introspection_data = NULL;
++
+ /* -------------------------------------------------------------------
+  * prototypes
+  * ------------------------------------------------------------------- */
+ // Function called at exit to clean up as much as possible
+ void cleanup( void );
++void ServiceStop(void);
+ 
+ /* -------------------------------------------------------------------
+  * global variables
+@@ -119,7 +158,8 @@ void waitUntilQuit( void );
+  * starts up server or client thread
+  * waits for all threads to complete
+  * ------------------------------------------------------------------- */
+-int main( int argc, char **argv ) {
++//int main( int argc, char **argv ) {
++static gboolean real_main(void) {
+ 
+     // Set SIGTERM and SIGINT to call our user interrupt function
+     my_signal( SIGTERM, Sig_Interupt );
+@@ -134,8 +174,11 @@ int main( int argc, char **argv ) {
+     WSADATA wsaData;
+     int rc = WSAStartup( 0x202, &wsaData );
+     WARN_errno( rc == SOCKET_ERROR, "WSAStartup" );
+-	if (rc == SOCKET_ERROR)
+-		return 0;
++    if (rc == SOCKET_ERROR)
++    {
++        isRunning = 0;
++        return 0;
++    }
+ 
+     // Tell windows we want to handle our own signals
+     SetConsoleCtrlHandler( sig_dispatcher, true );
+@@ -164,15 +207,16 @@ int main( int argc, char **argv ) {
+     // read settings from environment variables
+     Settings_ParseEnvironment( ext_gSettings );
+     // read settings from command-line parameters
+-    Settings_ParseCommandLine( argc, argv, ext_gSettings );
++    Settings_ParseCommandLine( _argc, _argv, ext_gSettings );
+ 
+     // Check for either having specified client or server
+-    if ( ext_gSettings->mThreadMode == kMode_Client 
++    if ( ext_gSettings->mThreadMode == kMode_Client
+          || ext_gSettings->mThreadMode == kMode_Listener ) {
++         isClientOrServerRunning = 1;
+ #ifdef WIN32
+         // Start the server as a daemon
+         if ( isDaemon( ext_gSettings ) ) {
+-            CmdInstallService(argc, argv);
++            CmdInstallService(_argc, _argv);
+             return 0;
+         }
+ 
+@@ -233,20 +277,21 @@ int main( int argc, char **argv ) {
+             { NULL, NULL}
+         };
+ 
+-	// starting the service by SCM, there is no arguments will be passed in.
+-	// the arguments will pass into Service_Main entry.
++        // starting the service by SCM, there is no arguments will be passed in.
++        // the arguments will pass into Service_Main entry.
+         if (!StartServiceCtrlDispatcher(dispatchTable) )
+             // If the service failed to start then print usage
+ #endif
+-        fprintf( stderr, usage_short, argv[0], argv[0] );
+-
++        fprintf( stderr, usage_short, _argv[0], _argv[0] );
++        isRunning = 0;
+         return 0;
+     }
+ 
+     // wait for other (client, server) threads to complete
+     thread_joinall();
+-    
++
+     // all done!
++    isRunning = 0;
+     return 0;
+ } // end main
+ 
+@@ -411,8 +456,424 @@ VOID ServiceStop() {
+ #endif
+ }
+ 
++#else
++void ServiceStop(void) {
++#ifdef HAVE_THREAD
++    Sig_Interupt( 1 );
++#else
++    sig_exit(1);
++#endif
++}
+ #endif
+ 
++static void iperf_signal_handler (GDBusConnection  *connection __attribute__((unused)),
++        const gchar      *sender_name __attribute__((unused)),
++        const gchar      *object_path __attribute__((unused)),
++        const gchar      *interface_name __attribute__((unused)),
++        const gchar      *signal_name,
++        GVariant         *parameters __attribute__((unused)),
++        gpointer         user_data __attribute__((unused)))
++{
++    g_print("========>iperf received signal %s from sender %s\n", signal_name, sender_name);
++    if (strcmp(signal_name, SIGNAL_PMD_TERMINATION) == 0)
++    {
++        if(isClientOrServerRunning)
++        {
++            ServiceStop();
++        }
++        isRunning = 0;
++    }
++}
++
++static int createArgv(char *inputStr, char ***argv)
++{
++    int ret = 0;
++    int new_argc = 0;
++    char **new_argv;
++    char *ptr;
++    int count = 0;
++    char *inputStr_backup = NULL;
++    
++    if(!inputStr)
++        return ret;
++
++    inputStr_backup = (char*)malloc(strlen(inputStr)+1);
++    strcpy(inputStr_backup, inputStr);
++
++    /* the first while loop to caculate the number of args */
++    ptr = strtok (inputStr," ");
++    while (ptr != NULL)
++    {
++        new_argc++;
++        ptr = strtok (NULL, " ");
++    }
++
++    if(new_argc == 0)
++        goto out;
++
++    new_argv = (char**)malloc(sizeof(char*) * (new_argc));
++
++    /* the second while loop to allocate buffer and copy */
++    ptr = strtok (inputStr_backup," ");
++    while (ptr != NULL && count < new_argc)
++    {
++        //printf ("%s...[%d]\n",ptr, count);
++        new_argv[count] = (char*)malloc(strlen(ptr)+1);
++        strcpy(new_argv[count], ptr);
++        ptr = strtok (NULL, " ");
++        count++;
++    }
++
++    *argv = new_argv;
++    ret = count;
++
++out:
++    if(inputStr_backup != NULL)
++        free(inputStr_backup);
++    return ret;
++}
++
++static void freeArgv(void)
++{
++    int argc = 0;
++    int i;
++
++    if (_argv != NULL)
++    {
++        for(i=0; i < _argc; i++)
++        {
++            if(_argv[i] != NULL)
++            {
++                free(_argv[i]);
++                argc++;
++            }
++        }
++        free(_argv);
++        _argv = NULL;
++    }
++    _argc = 0;
++}
++
++gpointer iperf_event_thread(gpointer user_data __attribute__((unused)))
++{
++    GMainContext *thread_context = NULL;
++
++    /* Create the GMainContext structure for this thread */
++    thread_context = g_main_context_new ();
++
++    /* subscribe interested signals */
++    g_dbus_connection_signal_subscribe (iperf_connection,
++    											PMD_BUS_NAME,
++    											PMD_INTERFACE,
++    											SIGNAL_PMD_TERMINATION,
++    											PMD_OBJECT_PATH,
++    											NULL,
++    											G_DBUS_SIGNAL_FLAGS_NONE,
++    											iperf_signal_handler,
++    											NULL,
++    											NULL);
++    /* Create the thread GMainLoop structure */
++    event_thread_loop = g_main_loop_new (thread_context, FALSE);
++
++    /* Run notify loop and process its events */
++    g_main_loop_run (event_thread_loop);
++
++    /* Unref thread loop after loop exits
++      it might be caused by g_main_loop_quit */
++    if (event_thread_loop)
++    {
++        g_main_loop_unref (event_thread_loop);
++        event_thread_loop = NULL;
++    }
++
++    /* Unref the thread context */
++    g_main_context_unref (thread_context);
++
++    g_thread_exit (NULL);
++    return NULL;
++}
++
++/** service thread: Create a loop to perform iperf service */
++static gpointer iperf_service_thread(gpointer user_data __attribute__((unused)))
++{
++    GMainContext *thread_context = NULL;
++    GSource      *service_thread_source  = NULL;
++
++    /* Create the GMainContext structure for this thread */
++    thread_context = g_main_context_new ();
++
++    /* Create a new service_thread_source and configure its properties */
++    service_thread_source = g_timeout_source_new (500);
++    g_source_set_name (service_thread_source, "service thread Timeout");
++    g_source_set_callback (service_thread_source, (GSourceFunc)real_main, NULL, NULL);
++    g_source_set_priority (service_thread_source, G_PRIORITY_HIGH);
++
++    /* Attach source to the context */
++    g_source_attach (service_thread_source, thread_context);
++    g_source_unref (service_thread_source);
++
++    /* Create the thread GMainLoop structure */
++    service_thread_loop = g_main_loop_new (thread_context, FALSE);
++
++    /* Run main loop */
++    g_main_loop_run(service_thread_loop);
++
++    /* Unref GMainLoop structure after escaping main loop */
++    if (service_thread_loop)
++    {
++        g_main_loop_unref (service_thread_loop);
++        service_thread_loop = NULL;
++    }
++
++    /* Unref the thread context */
++    g_main_context_unref (thread_context);
++
++    if(!default_arg_mode)
++        freeArgv();
++
++    g_thread_exit(NULL);
++    return NULL;
++} 
++
++static void
++process_method_call (GDBusConnection       *connection  __attribute__((unused)),
++        const gchar           *sender,
++        const gchar           *object_path __attribute__((unused)),
++        const gchar           *interface_name __attribute__((unused)),
++        const gchar           *method_name,
++        GVariant              *parameters,
++        GDBusMethodInvocation *invocation __attribute__((unused)),
++        gpointer               user_data __attribute__((unused)))
++{
++    char *input_args = NULL;
++    GError *error = NULL;
++
++    if(strcmp(method_name, "RunWithArgs") == 0)
++    {
++        if(isClientOrServerRunning)
++            return;
++
++        /* retrieve parameter */
++        g_variant_get (parameters, "(s)", &input_args);
++
++        freeArgv();
++      
++        _argc = createArgv(input_args, &_argv);
++
++        if(_argv != NULL && _argc > 0)
++        {
++            service_thread = g_thread_try_new ("service_thread", iperf_service_thread, NULL, &error);
++        }
++        default_arg_mode = 0;
++        g_assert_no_error (error);
++    }
++    
++    if (input_args != NULL)
++        g_free (input_args);
++}
++
++static const GDBusInterfaceVTable interface_vtable =
++{
++    process_method_call, NULL, NULL, { NULL}
++};
++
++static void
++on_bus_acquired (GDBusConnection *connection,
++        const gchar     *name  __attribute__((unused)),
++        gpointer         user_data  __attribute__((unused)))
++{
++    GError *error = NULL;
++
++    /* Save connection */
++    iperf_connection = connection;
++
++    registration_id = g_dbus_connection_register_object(connection,
++            IPERF_OBJ_PATH,
++            introspection_data->interfaces[0],
++            &interface_vtable,
++            NULL,  /* user_data */
++            NULL,  /* user_data_free_func */
++            NULL); /* GError** */
++    g_assert (registration_id > 0);
++
++    /* Create the notify thread to handle event notification. */
++    event_thread = g_thread_try_new ("event_thread", iperf_event_thread,
++                                     NULL, &error);
++    g_assert_no_error (error);
++}
++
++
++static void
++on_name_acquired (GDBusConnection *connection  __attribute__((unused)),
++        const gchar     *name,
++        gpointer         user_data  __attribute__((unused)))
++{
++    DBG(("\nAcquired the name %s\n\n", name));
++}
++
++
++static void
++on_name_lost (GDBusConnection *connection __attribute__((unused)),
++        const gchar     *name,
++        gpointer         user_data  __attribute__((unused)))
++{
++    DBG(("\nLost the name %s\n\n", name));
++    exit(1);
++}
++
++static gboolean sigterm_handler(gpointer user_data __attribute__((unused)))
++{
++    g_print ("iperf received SIGTERM. Terminating....\n");
++    if(isClientOrServerRunning)
++    {
++        ServiceStop();
++    }
++    isRunning = 0;
++
++    return TRUE;
++}
++
++// check isRunning 
++static gboolean iperf_loop(gpointer user_data __attribute__((unused)))
++{
++    if (!isRunning)
++    {
++        /* quit the main loop */
++        g_main_loop_quit (main_loop);
++    }
++    return isRunning;
++}
++
++static int iperf_stack(void)
++{
++    GSource *iperf_source = NULL;
++    GSource *sigterm_source = NULL;
++
++    /* Parse introspection_xml and returns
++        * a GDBusNodeInfo that can be used to
++        * lookup interface information.
++        * Note that this routine is using a
++        * GMarkup-based parser that only accepts
++        * a subset of valid XML documents */
++    introspection_data = g_dbus_node_info_new_for_xml (introspection_xml, NULL);
++	
++    g_assert(introspection_data != NULL);
++
++    /* Acquire "com.broadcom.iperf" on the G_BUS_TYPE_SYSTEM,
++         * and calls on_name_acquired and on_name_lost when
++         * the name is acquired respectively lost.
++         * Callbacks will be invoked in the thread-default main
++         * context of the thread you are calling this function from */
++    owner_id = g_bus_own_name (G_BUS_TYPE_SYSTEM,
++            IPERF_BUS_NAME,
++            G_BUS_NAME_OWNER_FLAGS_NONE,
++            on_bus_acquired,
++            on_name_acquired,
++            on_name_lost,
++            NULL,
++            NULL);
++
++    iperf_source = g_timeout_source_new(100);
++    g_source_set_name (iperf_source, "main loop");
++    g_source_set_callback(iperf_source, (GSourceFunc)iperf_loop,
++            NULL, NULL);
++
++    /* Attach iperf source to the default context */
++    g_source_attach (iperf_source, NULL);
++
++    /* Unref the iperf source */
++    g_source_unref (iperf_source);
++
++    /* Create a new GMainLoop structure */
++    main_loop = g_main_loop_new (NULL, FALSE);
++
++    /* Create sigterm source and configure its properties */
++    sigterm_source = g_unix_signal_source_new (SIGTERM);
++    g_source_set_name (sigterm_source, "SIGTERM handling");
++    g_source_set_callback (sigterm_source, (GSourceFunc)sigterm_handler, NULL, NULL);
++    g_source_set_priority (sigterm_source, G_PRIORITY_HIGH);
++
++    /* Attach sigterm source to the default context */
++    g_source_attach (sigterm_source, NULL);
++
++    /* Unref the sigterm source */
++    g_source_unref (sigterm_source);
++
++    /* Runs a main loop and perform actions */
++    g_main_loop_run (main_loop);
++
++    /* Quit the event thread loop before exit */
++    if (event_thread_loop)
++    {
++        g_main_loop_quit (event_thread_loop);
++        g_thread_join (event_thread);
++        event_thread_loop = NULL;
++    }
++
++    /* Quit the service thread loop before exit */
++    if (service_thread_loop)
++    {
++        g_main_loop_quit (service_thread_loop);
++        g_thread_join (service_thread);
++        service_thread_loop = NULL;
++    }
++
++    /* Decrease the reference count on a GMainLoop
++       * object by one. If the result is zero,
++       * free the loop and free all associated memory */
++    g_main_loop_unref (main_loop);
++
++    /* Unref event thread */
++    if (event_thread)
++    {
++        g_thread_unref (event_thread);
++        event_thread = NULL;
++    }
++
++    /* Unref service thread */
++    if (service_thread)
++    {
++        g_thread_unref (service_thread);
++        service_thread = NULL;
++    }
++
++    return 0;
++}
++
++static int iperf_init(void)
++{
++    DBG(("#### [%s:%d] ####\n", __func__, __LINE__));
++    /* Ignore broken pipes */
++    signal(SIGPIPE, SIG_IGN);
++    return 0;
++}
++
++static void iperf_exit(void)
++{
++    DBG(("#### [%s:%d] ####\n", __func__, __LINE__));
++
++    /* Stop owning a name */
++    g_bus_unown_name (owner_id);
++}
++
++int main(int argc, char **argv)
++{
++    int rv = 0;
++
++    rv = iperf_init();
++
++    if (!rv)
++    {
++        /* iperf main loop */
++        rv = iperf_stack();
++    }
++
++    /* clean allocated resources */
++    iperf_exit();
++
++    return rv;
++}
++
+ 
+ 
+ 

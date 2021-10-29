@@ -1,0 +1,12 @@
+#!/bin/bash
+
+if [ "`cat /sys/class/ubi/ubi0_51/name`" = "transition" ]
+then
+  (
+    cd /
+    cat /dev/ubi0_51 | transition_unpacker
+    ubirmvol /dev/ubi0 -N transition 
+  )
+fi
+
+

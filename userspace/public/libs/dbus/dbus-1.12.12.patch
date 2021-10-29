@@ -1,0 +1,156 @@
+diff -ruE orig_dbus-1.12.12/bus/Makefile.in dbus-1.12.12/bus/Makefile.in
+--- orig_dbus-1.12.12/bus/Makefile.in   2018-12-04 05:58:58.000000000 -0800
++++ dbus-1.12.12/bus/Makefile.in        2020-09-10 21:24:58.220128595 -0700
+@@ -1764,7 +1764,7 @@
+ install-data-hook:
+ 	$(mkinstalldirs) $(DESTDIR)$(dbusdatadir)/session.d
+ 	$(mkinstalldirs) $(DESTDIR)$(dbusdatadir)/services
+-@DBUS_UNIX_TRUE@	$(mkinstalldirs) $(DESTDIR)$(localstatedir)/run/dbus
++# @DBUS_UNIX_TRUE@	$(mkinstalldirs) $(DESTDIR)$(localstatedir)/run/dbus
+ @DBUS_UNIX_TRUE@	$(mkinstalldirs) $(DESTDIR)$(dbusdatadir)/system.d
+ @DBUS_UNIX_TRUE@	$(mkinstalldirs) $(DESTDIR)$(dbusdatadir)/system-services
+ # Install dbus.socket as default implementation of a D-Bus stack.
+diff -rupN orig_dbus-1.12.12/bus/config-parser.c dbus-1.12.12/bus/config-parser.c
+--- orig_dbus-1.12.12/bus/config-parser.c	2017-10-30 20:26:18.000000000 +0800
++++ dbus-1.12.12/bus/config-parser.c	2019-01-30 16:19:05.631089053 +0800
+@@ -1157,9 +1157,11 @@ start_busconfig_child (BusConfigParser
+           if (_dbus_parse_unix_user_from_config (&username,
+                                                  &e->d.policy.gid_uid_or_at_console))
+             e->d.policy.type = POLICY_USER;
++#if 0 /* brcm: suppress warning message */
+           else
+             _dbus_warn ("Unknown username \"%s\" in message bus configuration file",
+                         user);
++#endif
+         }
+       else if (group != NULL)
+         {
+diff -rupN orig_dbus-1.12.12/dbus/dbus-auth.c dbus-1.12.12/dbus/dbus-auth.c
+--- orig_dbus-1.12.12/dbus/dbus-auth.c	2017-10-30 05:26:18.000000000 -0700
++++ dbus-1.12.12/dbus/dbus-auth.c	2020-03-08 17:55:09.408477973 -0700
+@@ -30,6 +30,7 @@
+ #include "dbus-sha.h"
+ #include "dbus-protocol.h"
+ #include "dbus-credentials.h"
++#include "dbus-userdb.h"
+ 
+ /**
+  * @defgroup DBusAuth Authentication
+@@ -1108,6 +1109,36 @@ handle_server_data_external_mech (DBusAu
+     }
+   else
+     {
++      /* BRCM
++       * Application requesting for bus connection might be running in a
++       * different uid namespace. Mapping between the application uid namespace
++       * and the host uid namespace can be found in /proc/<app_pid>/uid_map.
++       *
++       * auth->identity is the application uid in the application uid namespace.
++       * _dbus_credentials_add_from_user() may fail because it could not get
++       * credentials from auth->identity. To avoid the failure, we need to
++       * replace it with the application uid in the host uid namespace.  
++       *
++       * As auth->credentials is read from socket, its unix_uid is the
++       * application uid in the host uid namespace. We want to replace
++       * auth->identity with the socket credentials unix_uid if they are not
++       * equal because of uid mapping.
++       */
++      unsigned long n;
++      if (_dbus_is_a_number (&auth->identity, &n))
++        {
++          unsigned long unix_uid;
++          unix_uid = _dbus_credentials_get_unix_uid(auth->credentials);
++          if (n != unix_uid)
++            {
++              if (_brcm_dbus_credentials_uid_check (auth->credentials))
++                {
++                  _dbus_string_set_length(&auth->identity, 0);
++                  _dbus_string_append_uint(&auth->identity, unix_uid);  
++                }
++            }
++        }
++
+       if (!_dbus_credentials_add_from_user (auth->desired_identity,
+                                             &auth->identity))
+         {
+diff -rupN orig_dbus-1.12.12/dbus/dbus-credentials.c dbus-1.12.12/dbus/dbus-credentials.c
+--- orig_dbus-1.12.12/dbus/dbus-credentials.c	2017-10-30 05:26:18.000000000 -0700
++++ dbus-1.12.12/dbus/dbus-credentials.c	2020-03-08 11:24:51.834211370 -0700
+@@ -22,6 +22,9 @@
+  */
+ #include <config.h>
+ #include <string.h>
++#include <stdlib.h>
++#include <stdio.h>
++
+ #include "dbus-credentials.h"
+ #include "dbus-internals.h"
+ 
+@@ -613,6 +616,41 @@ oom:
+   return FALSE;
+ }
+ 
++/**
++ * BRCM:
++ * Check that the credentials unix_uid is within the uid_map range of its pid.
++ *
++ * @param credentials, Credentials read from socket
++ * @returns #TRUE if yes
++ */
++dbus_bool_t
++_brcm_dbus_credentials_uid_check (DBusCredentials *credentials)
++{
++   dbus_bool_t ret = FALSE;
++   FILE *fp = NULL;
++   char cmd[128] = {0};
++
++   _dbus_verbose("********BRCM socket credential %lu/%lu/%s\n", credentials->pid, credentials->unix_uid, credentials->windows_sid);
++   sprintf(cmd, "cat /proc/%u/uid_map", (unsigned int)credentials->pid);
++   fp = popen(cmd, "r");
++   if (fp)
++   {
++      char line[128]={0};
++      if (fgets(line, sizeof(line), fp))
++      {
++         unsigned int dummy, start, range;
++         dummy = start = range = 0;
++         sscanf(line, "%u %u %u", &dummy, &start, &range);
++         if (credentials->unix_uid >= start &&
++             credentials->unix_uid < (start+range))
++            ret = TRUE;
++      }
++      pclose(fp);
++   }
++   return ret;
++}
++
++
+ /** @} */
+ 
+ /* tests in dbus-credentials-util.c */
+diff -rupN orig_dbus-1.12.12/dbus/dbus-credentials.h dbus-1.12.12/dbus/dbus-credentials.h
+--- orig_dbus-1.12.12/dbus/dbus-credentials.h	2017-10-30 05:26:18.000000000 -0700
++++ dbus-1.12.12/dbus/dbus-credentials.h	2020-03-08 11:12:50.691052715 -0700
+@@ -95,6 +95,8 @@ dbus_bool_t      _dbus_credentials_same_
+ DBUS_PRIVATE_EXPORT
+ dbus_bool_t      _dbus_credentials_to_string_append         (DBusCredentials    *credentials,
+                                                              DBusString         *string);
++DBUS_PRIVATE_EXPORT
++dbus_bool_t      _brcm_dbus_credentials_uid_check           (DBusCredentials    *credentials);
+ 
+ DBUS_END_DECLS
+ 
+diff -rupN orig_dbus-1.12.12/dbus/dbus-sysdeps-unix.c dbus-1.12.12/dbus/dbus-sysdeps-unix.c
+--- orig_dbus-1.12.12/dbus/dbus-sysdeps-unix.c	2018-08-03 00:13:02.000000000 +0800
++++ dbus-1.12.12/dbus/dbus-sysdeps-unix.c	2019-01-30 16:25:40.051089053 +0800
+@@ -1546,7 +1546,9 @@ _dbus_listen_tcp_socket (const char
+ 
+   hints.ai_protocol = IPPROTO_TCP;
+   hints.ai_socktype = SOCK_STREAM;
+-  hints.ai_flags = AI_ADDRCONFIG | AI_PASSIVE;
++  //gqin+ here network interface not created and no IPv4/v6
++  //hints.ai_flags = AI_ADDRCONFIG | AI_PASSIVE;
++  hints.ai_flags = AI_PASSIVE;
+ 
+  redo_lookup_with_port:
+   ai = NULL;

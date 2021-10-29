@@ -1,0 +1,8 @@
+BEGIN
+  eid         = EID_FTPD         /* this is the ftp server */
+  name        = bftpd
+  flags       = EIF_SERVER|EIF_SERVER_TCP|EIF_MESSAGING_CAPABLE|EIF_IPV6
+  backLog     = 1
+  port        = FTPD_PORT
+END
+

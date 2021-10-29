@@ -1,0 +1,60 @@
+diff -urN miniupnp-miniupnpd_2_1.ori/miniupnpd/asyncsendto.c miniupnp-miniupnpd_2_1/miniupnpd/asyncsendto.c
+--- miniupnp-miniupnpd_2_1.ori/miniupnpd/asyncsendto.c	2018-05-09 05:40:27.000000000 +0800
++++ miniupnp-miniupnpd_2_1/miniupnpd/asyncsendto.c	2019-07-02 11:13:47.614320184 +0800
+@@ -44,6 +44,12 @@
+ 	char data[];
+ };
+ 
++/* from linux/ipv6.h */
++struct in6_pktinfo {
++    struct in6_addr ipi6_addr;
++    int ipi6_ifindex;
++};
++
+ static LIST_HEAD(listhead, scheduled_send) send_list = { NULL };
+ 
+ /*
+diff -urN miniupnp-miniupnpd_2_1.ori/miniupnpd/Makefile.linux miniupnp-miniupnpd_2_1/miniupnpd/Makefile.linux
+--- miniupnp-miniupnpd_2_1.ori/miniupnpd/Makefile.linux	2018-05-09 05:40:27.000000000 +0800
++++ miniupnp-miniupnpd_2_1/miniupnpd/Makefile.linux	2019-07-02 11:22:17.597257817 +0800
+@@ -106,7 +106,8 @@
+ ifeq ($(TEST), 1)
+ CPPFLAGS := $(CPPFLAGS) -DIPTABLES_143
+ # the following sucks, but works
+-LDLIBS = $(IPTABLESPATH)/libiptc/.libs/libip4tc.o
++#LDLIBS = $(IPTABLESPATH)/libiptc/.libs/libip4tc.o
++LDLIBS = $(IPTABLESPATH)/libiptc/libip4tc.o $(IPTABLESPATH)/libiptc/libip6tc.o
+ #LDLIBS = $(IPTABLESPATH)/libiptc/.libs/libiptc.a
+ else # ifeq ($(TEST), 1)
+ LDLIBS = $(IPTABLESPATH)/libiptc/libiptc.a
+diff -urN miniupnp-miniupnpd_2_1.ori/miniupnpd/minissdp.c miniupnp-miniupnpd_2_1/miniupnpd/minissdp.c
+--- miniupnp-miniupnpd_2_1.ori/miniupnpd/minissdp.c	2018-05-09 05:40:27.000000000 +0800
++++ miniupnp-miniupnpd_2_1/miniupnpd/minissdp.c	2019-07-02 11:12:29.841698945 +0800
+@@ -51,6 +51,12 @@
+ #define SL_SSDP_MCAST_ADDR "FF05::C"
+ #define GL_SSDP_MCAST_ADDR "FF0E::C"
+ 
++/* from linux/ipv6.h */
++struct in6_pktinfo {
++    struct in6_addr ipi6_addr;
++    int ipi6_ifindex;
++};
++
+ /* AddMulticastMembership()
+  * param s			socket
+  * param lan_addr	lan address
+diff -urN miniupnp-miniupnpd_2_1.ori/miniupnpd/natpmp.c miniupnp-miniupnpd_2_1/miniupnpd/natpmp.c
+--- miniupnp-miniupnpd_2_1.ori/miniupnpd/natpmp.c	2018-05-09 05:40:27.000000000 +0800
++++ miniupnp-miniupnpd_2_1/miniupnpd/natpmp.c	2019-07-02 11:13:06.585781719 +0800
+@@ -28,6 +28,11 @@
+ #include "asyncsendto.h"
+ 
+ #ifdef ENABLE_NATPMP
++/* from linux/ipv6.h */
++struct in6_pktinfo {
++    struct in6_addr ipi6_addr;
++    int ipi6_ifindex;
++};
+ 
+ int OpenAndConfNATPMPSocket(in_addr_t addr)
+ {

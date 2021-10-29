@@ -1,0 +1,50 @@
+
+BEGIN
+  eid         = EID_WLMNGR_DELETED
+  name        = WLMNGR-DAEMON
+  path        = /bin/wlmngr
+  altPath     = /bin/wlmngr2
+  flags       = EIF_MDM|EIF_MESSAGING_CAPABLE|EIF_LAUNCH_ON_BOOT|EIF_USE_ALTPATH_FOR_TR181
+END
+
+BEGIN
+  eid         = EID_WLSSK
+  name        = wlssk
+  path        = /bin/wlssk
+  flags       = EIF_MDM|EIF_MESSAGING_CAPABLE|EIF_LAUNCH_ON_BOOT|EIF_MULTIPLE_THREADS
+END
+
+BEGIN
+  eid         = EID_WLNVRAM
+  name        = WLNVRAM
+  path        = /bin/nvram
+  flags       = EIF_MESSAGING_CAPABLE
+END
+
+BEGIN
+  eid         = EID_WLEVENT
+  name        = WLEVENT
+  path        = /bin/wlevt
+  flags       = EIF_MESSAGING_CAPABLE
+END
+
+BEGIN
+  eid         = EID_WLWPS
+  name        = WLWPS
+  path        = /bin/wps_monitor
+  flags       = EIF_MESSAGING_CAPABLE
+END
+
+BEGIN
+  eid         = EID_WLWAPID
+  name        = WLWAPID
+  path        = /bin/wapid
+  flags       = EIF_MESSAGING_CAPABLE
+END
+
+BEGIN
+  eid         = EID_WLDATAELD
+  name        = wldataeld
+  path        = /bin/wldataeld
+  flags       = EIF_MDM|EIF_MESSAGING_CAPABLE|EIF_MULTIPLE_THREADS
+END

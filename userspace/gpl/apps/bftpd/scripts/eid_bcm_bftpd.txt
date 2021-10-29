@@ -1,0 +1,7 @@
+BEGIN
+  eid         = EID_FTPD         /* this is the ftp server */
+  name        = bftpd
+  runArgs     = "-d -n"
+  flags       = EIF_LAUNCH_ON_BOOT
+END
+

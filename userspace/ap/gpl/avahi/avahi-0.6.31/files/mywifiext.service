@@ -1,0 +1,9 @@
+<?xml version="1.0" standalone='no'?><!--*-nxml-*-->
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+ <name replace-wildcards="yes">%h</name>
+  <service>
+   <type>_mywifiext._tcp</type>
+   <txt-record>01206CB0CE47650C000201010000000000C0A80105EX7000</txt-record>
+  </service>
+</service-group>

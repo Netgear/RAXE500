@@ -1,0 +1,42 @@
+diff -Naur org_lxc-3.1.0/src/lxc/storage/lvm.c lxc-3.1.0/src/lxc/storage/lvm.c
+--- org_lxc-3.1.0/src/lxc/storage/lvm.c	2018-12-13 15:13:51.000000000 -0800
++++ lxc-3.1.0/src/lxc/storage/lvm.c	2019-07-31 13:48:10.122190863 -0700
+@@ -46,6 +46,10 @@
+ #include <sys/mkdev.h>
+ #endif
+ 
++#ifdef MAJOR_IN_SYSMACROS
++#include <sys/sysmacros.h>
++#endif
++
+ lxc_log_define(lvm, lxc);
+ 
+ struct lvcreate_args {
+diff -Naur org_lxc-3.1.0/src/lxc/conf.c lxc-3.1.0/src/lxc/conf.c
+--- org_lxc-3.1.0/src/lxc/conf.c	2018-12-13 15:13:51.000000000 -0800
++++ lxc-3.1.0/src/lxc/conf.c	2019-07-31 13:49:14.891471524 -0700
+@@ -83,6 +83,10 @@
+ #include <sys/mkdev.h>
+ #endif
+ 
++#ifdef MAJOR_IN_SYSMACROS
++#include <sys/sysmacros.h>
++#endif
++
+ #ifdef HAVE_STATVFS
+ #include <sys/statvfs.h>
+ #endif
+diff -Naur org_lxc-3.1.0/src/lxc/lxccontainer.c lxc-3.1.0/src/lxc/lxccontainer.c
+--- org_lxc-3.1.0/src/lxc/lxccontainer.c	2018-12-13 15:13:51.000000000 -0800
++++ lxc-3.1.0/src/lxc/lxccontainer.c	2019-07-31 13:49:40.819983441 -0700
+@@ -83,6 +83,10 @@
+ #include <sys/mkdev.h>
+ #endif
+ 
++#ifdef MAJOR_IN_SYSMACROS
++#include <sys/sysmacros.h>
++#endif
++
+ #if IS_BIONIC
+ #include <../include/lxcmntent.h>
+ #else

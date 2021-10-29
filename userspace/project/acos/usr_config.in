@@ -1,0 +1,5 @@
+#compile flag for BRCM userspace process/lib
+
+ifeq ($(CONFIG_NETGEAR_SINGLE_IMAGE),y)
+CFLAGS += -DNETGEAR_SINGLE_IMAGE
+endif

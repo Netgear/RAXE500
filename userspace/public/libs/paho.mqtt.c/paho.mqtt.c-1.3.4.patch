@@ -1,0 +1,14 @@
+Only in paho.mqtt.c.modified/: paho.mqtt.c-1.3.1
+diff -ru paho.mqtt.c.orig/paho.mqtt.c-1.3.4/src/CMakeLists.txt paho.mqtt.c.modified/paho.mqtt.c-1.3.4/src/CMakeLists.txt
+--- paho.mqtt.c.orig/paho.mqtt.c-1.3.4/src/CMakeLists.txt	2020-06-04 07:27:52.000000000 -0700
++++ paho.mqtt.c.modified/paho.mqtt.c-1.3.4/src/CMakeLists.txt	2020-07-06 12:37:59.178872208 -0700
+@@ -65,7 +65,7 @@
+         # it or build will fail on uclibc or musl
+         FIND_LIBRARY(LIB_ANL anl)
+         IF(LIB_ANL)
+-            SET(LIBS_SYSTEM "${LIBS_SYSTEM} ${LIB_ANL}")
++###            SET(LIBS_SYSTEM "${LIBS_SYSTEM} ${LIB_ANL}")
+         ENDIF()
+         ADD_DEFINITIONS(-D_GNU_SOURCE -fvisibility=hidden)
+     ELSEIF (CMAKE_SYSTEM_NAME MATCHES "Android")
+Only in paho.mqtt.c.modified/: v1.3.1.zip

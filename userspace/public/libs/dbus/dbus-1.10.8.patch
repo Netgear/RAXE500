@@ -1,0 +1,116 @@
+diff -Naur orig_dbus-1.10.8/dbus/dbus-auth.c dbus-1.10.8/dbus/dbus-auth.c
+--- orig_dbus-1.10.8/dbus/dbus-auth.c	2015-09-30 22:48:40.000000000 +0800
++++ dbus-1.10.8/dbus/dbus-auth.c	2016-10-04 10:47:52.891147000 +0800
+@@ -1121,7 +1121,13 @@
+                      _dbus_string_get_const_data (&auth->identity));
+       return send_rejected (auth);
+     }
+-  
++
++  /* BRCM
++   * if uid in desired_identity is 0, while in credentials is 1xxx
++   * copy socket credentials uid to desired_identity according to /proc/PID/uid_map
++   */
++  _dbus_lxc_container_map_uid_for_cred (auth->desired_identity, auth->credentials);
++
+   if (_dbus_credentials_are_superset (auth->credentials,
+                                       auth->desired_identity))
+     {
+diff -Naur orig_dbus-1.10.8/dbus/dbus-credentials.c dbus-1.10.8/dbus/dbus-credentials.c
+--- orig_dbus-1.10.8/dbus/dbus-credentials.c	2015-09-30 22:48:40.000000000 +0800
++++ dbus-1.10.8/dbus/dbus-credentials.c	2016-10-04 10:47:52.891147000 +0800
+@@ -22,6 +22,9 @@
+  */
+ #include <config.h>
+ #include <string.h>
++#include <stdlib.h>
++#include <stdio.h>
++
+ #include "dbus-credentials.h"
+ #include "dbus-internals.h"
+ 
+@@ -613,6 +616,41 @@
+   return FALSE;
+ }
+ 
++/**
++ * BRCM: 
++ * Retrieve uid-outside-ns from proc/pid/uid_map
++ * then add this uid to desired_identity.
++ *
++ * @param desired_cred , Identity client has requested 
++ * @param credentials, Credentials read from socket 
++ */
++void _dbus_lxc_container_map_uid_for_cred (DBusCredentials *desired_cred, DBusCredentials *credentials)
++{
++   FILE *fp = NULL;
++   char cmd[128] = {0};
++   char line[64] = {0};
++   dbus_uid_t uid = 0;
++
++   if (credentials->unix_uid == 0)
++      return;
++
++   _dbus_verbose("********BRCM socket credentials %lu/%lu/%s, desired_cred %lu/%lu/%s\n", credentials->pid, credentials->unix_uid, credentials->windows_sid, desired_cred->pid, desired_cred->unix_uid, desired_cred->windows_sid);
++   sprintf(cmd, "cat /proc/%u/uid_map | awk '{print $2}'", (unsigned int)credentials->pid);
++   fp = popen(cmd, "r");
++   if (fp)
++   {
++      if (fgets(line, sizeof(line), fp))
++      {
++         uid = atoi(line);
++         if (uid == credentials->unix_uid)
++            _dbus_credentials_add_unix_uid(desired_cred, credentials->unix_uid);
++      }
++      pclose(fp);
++   }
++   _dbus_verbose("********BRCM socket credentials %lu/%lu/%s, desired_cred %lu/%lu/%s\n", credentials->pid, credentials->unix_uid, credentials->windows_sid, desired_cred->pid, desired_cred->unix_uid, desired_cred->windows_sid);
++}
++
++
+ /** @} */
+ 
+ /* tests in dbus-credentials-util.c */
+diff -Naur orig_dbus-1.10.8/dbus/dbus-credentials.h dbus-1.10.8/dbus/dbus-credentials.h
+--- orig_dbus-1.10.8/dbus/dbus-credentials.h	2015-09-30 22:48:40.000000000 +0800
++++ dbus-1.10.8/dbus/dbus-credentials.h	2016-10-04 10:47:52.891147000 +0800
+@@ -95,6 +95,9 @@
+ DBUS_PRIVATE_EXPORT
+ dbus_bool_t      _dbus_credentials_to_string_append         (DBusCredentials    *credentials,
+                                                              DBusString         *string);
++DBUS_PRIVATE_EXPORT
++void             _dbus_lxc_container_map_uid_for_cred       (DBusCredentials    *desired_cred,
++                                                             DBusCredentials *credentials);
+ 
+ DBUS_END_DECLS
+ 
+diff -Naur orig_dbus-1.10.8/dbus/dbus-sysdeps-unix.c dbus-1.10.8/dbus/dbus-sysdeps-unix.c
+--- orig_dbus-1.10.8/dbus/dbus-sysdeps-unix.c	2015-09-30 22:48:40.000000000 +0800
++++ dbus-1.10.8/dbus/dbus-sysdeps-unix.c	2016-10-04 10:47:52.891147000 +0800
+@@ -1417,7 +1417,9 @@
+ 
+   hints.ai_protocol = IPPROTO_TCP;
+   hints.ai_socktype = SOCK_STREAM;
+-  hints.ai_flags = AI_ADDRCONFIG | AI_PASSIVE;
++  //gqin+ here network interface not created and no IPv4/v6
++  //hints.ai_flags = AI_ADDRCONFIG | AI_PASSIVE;
++  hints.ai_flags = AI_PASSIVE;
+ 
+  redo_lookup_with_port:
+   ai = NULL;
+
+diff -Naur orig_dbus-1.10.8/bus/config-parser.c dbus-1.10.8/bus/config-parser.c
+--- orig_dbus-1.10.8/bus/config-parser.c	2017-04-10 13:16:54.386019084 -0700
++++ dbus-1.10.8/bus/config-parser.c	2017-04-10 13:28:23.722133213 -0700
+@@ -1048,9 +1048,11 @@
+           if (_dbus_parse_unix_user_from_config (&username,
+                                                  &e->d.policy.gid_uid_or_at_console))
+             e->d.policy.type = POLICY_USER;
++#if 0 /* brcm: suppress warning message */
+           else
+             _dbus_warn ("Unknown username \"%s\" in message bus configuration file\n",
+                         user);
++#endif
+         }
+       else if (group != NULL)
+         {

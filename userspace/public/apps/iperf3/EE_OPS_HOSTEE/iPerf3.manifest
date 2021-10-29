@@ -1,0 +1,60 @@
+{
+  "app-name": "iPerf3",
+  "vendor": "NLANR/DAST",
+  "version": "1.0",
+  "description": "iPerf 3.1.4 Program",
+  "user": "Super User",
+  "bus":
+  {
+    "wellknown-name": "com.broadcom.iperf3",
+    "object-path": ["/com/broadcom/iperf3"]
+  },
+  "process":
+  {
+    "apparmorProfile": "disallow-fcctl",
+    "args": [
+      "iPerf3"
+    ]
+  },
+  "linux":
+  {
+    "resources":
+    {
+      "cpu": {
+        "quota": 30
+      },
+      "memory": {
+        "limit": 50000000
+      },
+      "network-setup": {"mode":"Primary"},
+      "flash-size": "980KB"
+    },
+  },
+  "config":
+  {
+    "ExposedPorts":"5001/tcp,5001/udp"
+  },
+  "dependency":
+  {
+    "libraries": "crypt,pthread,rt,expat,ffi,dbus-1,z"
+  },
+  "mounts": [
+    {
+       "destination": "/tmp",
+       "source": "tmpfs",
+       "type": "tmpfs",
+       "options": ["tmpfs"]
+    },
+    {
+       "destination": "/var",
+       "source": "/var",
+       "type": "none",
+       "options": ["rw", "bind"]
+    },
+    {
+       "destination": "/dev",
+       "source": "devtmpfs",
+       "type": "devtmpfs",
+    },
+  ]
+}

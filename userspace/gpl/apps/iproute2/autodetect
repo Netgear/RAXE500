@@ -1,0 +1,3 @@
+kernel-aarch64: aarch64
+dependson: gpl/apps/iptables
+

@@ -1,0 +1,1 @@
+dependson: public/libs/dbus public/libs/glib private/libs/bcm_zbus_intf

@@ -1,0 +1,56 @@
+diff -rupN orig-obuspa/src/vendor/vendor_factory_reset_example.c obuspa/src/vendor/vendor_factory_reset_example.c
+--- orig-obuspa/src/vendor/vendor_factory_reset_example.c	2020-01-08 04:10:30.000000000 -0800
++++ obuspa/src/vendor/vendor_factory_reset_example.c	2020-03-25 14:37:10.595736283 -0700
+@@ -53,17 +53,18 @@
+ static const kv_pair_t factory_reset_parameters[] =
+ {
+     // The following parameters will definitely need modifying
+-    { "Device.LocalAgent.Controller.1.EndpointID", "self::usp-controller.com" },
+-    { "Device.STOMP.Connection.1.Host", "usp-controller.com" },
+-    { "Device.STOMP.Connection.1.Username", "username" },
+-    { "Device.STOMP.Connection.1.Password", "password" },
++    { "Device.LocalAgent.Controller.1.EndpointID", "proto::controller-id" },
++    { "Device.STOMP.Connection.1.Host", "6.0.0.2" },
++    { "Device.STOMP.Connection.1.Username", "qacafe" },
++    { "Device.STOMP.Connection.1.Password", "qacafe123" },
+ 
+     // The following parameters may be modified
++    { "Device.LocalAgent.EndpointID", "proto::agent-id" },
+     { "Device.LocalAgent.MTP.1.Alias", "cpe-1" },
+     { "Device.LocalAgent.MTP.1.Enable", "true" },
+     { "Device.LocalAgent.MTP.1.Protocol", "STOMP" },
+     { "Device.LocalAgent.MTP.1.STOMP.Reference", "Device.STOMP.Connection.1" },
+-    { "Device.LocalAgent.MTP.1.STOMP.Destination", "" },
++    { "Device.LocalAgent.MTP.1.STOMP.Destination", "/agent-path" },
+     { "Device.LocalAgent.Controller.1.Alias", "cpe-1" },
+     { "Device.LocalAgent.Controller.1.Enable", "true" },
+     { "Device.LocalAgent.Controller.1.AssignedRole", "Device.LocalAgent.ControllerTrust.Role.1" },
+@@ -80,9 +81,9 @@ static const kv_pair_t factory_reset_par
+     { "Device.STOMP.Connection.1.Alias", "cpe-1" },
+     { "Device.STOMP.Connection.1.Enable", "true" },
+     { "Device.STOMP.Connection.1.Port", "61613" },
+-    { "Device.STOMP.Connection.1.X_ARRIS-COM_EnableEncryption", "true" },
++    { "Device.STOMP.Connection.1.X_ARRIS-COM_EnableEncryption", "false" },
+     { "Device.STOMP.Connection.1.VirtualHost", "/" },
+-    { "Device.STOMP.Connection.1.EnableHeartbeats", "true" },
++    { "Device.STOMP.Connection.1.EnableHeartbeats", "false" },
+     { "Device.STOMP.Connection.1.OutgoingHeartbeat", "30000" },
+     { "Device.STOMP.Connection.1.IncomingHeartbeat", "300000" },
+     { "Device.STOMP.Connection.1.ServerRetryInitialInterval", "60" },
+diff -rupN orig-obuspa/src/core/msg_handler.c obuspa/src/core/msg_handler.c
+--- orig-obuspa/src/core/msg_handler.c	2020-01-08 04:10:30.000000000 -0800
++++ obuspa/src/core/msg_handler.c	2020-03-25 16:50:18.329190182 -0700
+@@ -658,11 +658,11 @@ int ValidateUspRecord(UspRecord__Record
+     }
+ 
+     // Exit if ignoring sender certificate
+-    if ((rec->sender_cert.len != 0) || (rec->sender_cert.data != NULL))
++    /*if ((rec->sender_cert.len != 0) || (rec->sender_cert.data != NULL))
+     {
+         USP_ERR_SetMessage("%s: Ignoring USP record as checking of sender certificate is not supported", __FUNCTION__);
+         return USP_ERR_SECURE_SESS_NOT_SUPPORTED;
+-    }
++    }*/
+ 
+     // Exit if this record contains an End-to-End Session Context (which we don't yet support)
+     if (rec->record_type_case != USP_RECORD__RECORD__RECORD_TYPE_NO_SESSION_CONTEXT)

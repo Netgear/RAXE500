@@ -1,0 +1,15 @@
+#
+# Makefile for the optical wan detection
+#
+
+obj-$(CONFIG_BCM_PON_WAN_TYPE_AUTO_DETECT) := wantypedet.o 
+wantypedet-objs += detect_wan_type.o
+ 
+ 
+wantypedet-objs += wan_type_detection.o
+EXTRA_CFLAGS += -I$(SHARED_DIR)/opensource/drv/phys
+EXTRA_CFLAGS += $(INC_RDP_FLAGS) -Werror -Wall
+-include $(TOPDIR)/Rules.make
+
+clean:
+	rm -f core *.o *.a *.s .*.cmd *.ko *.mod.c modules.*

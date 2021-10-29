@@ -1,0 +1,769 @@
+diff -Naur minidlna/minidlna-1.1.5/getifaddr.c minidlna_r146653/minidlna-1.1.5/getifaddr.c
+--- minidlna/minidlna-1.1.5/getifaddr.c	2020-09-23 18:04:38.620830754 +0800
++++ minidlna_r146653/minidlna-1.1.5/getifaddr.c	2020-09-23 18:02:15.183088636 +0800
+@@ -88,6 +88,10 @@
+ 		addr_in = (struct sockaddr_in *)p->ifa_addr;
+ 		if (!ifname && (p->ifa_flags & (IFF_LOOPBACK | IFF_SLAVE)))
+ 			continue;
++			/* Foxconn added start Bernie 06/01/2016 */
++			if (strcmp(p->ifa_name, "br0") != 0)
++				continue;
++			/* Foxconn added end Bernie 06/01/2016 */				
+ 		memcpy(&lan_addr[n_lan_addr].addr, &addr_in->sin_addr, sizeof(lan_addr[n_lan_addr].addr));
+ 		if (!inet_ntop(AF_INET, &addr_in->sin_addr, lan_addr[n_lan_addr].str, sizeof(lan_addr[0].str)) )
+ 		{
+@@ -133,6 +137,8 @@
+ 	{
+ 		ifr = &ifc.ifc_req[i];
+ 		if (ifname && strcmp(ifr->ifr_name, ifname) != 0)
++			continue;		
++		if(strcmp(ifr->ifr_name,"br0")!=0)
+ 			continue;
+ 		if (!ifname &&
+ 		    (ioctl(s, SIOCGIFFLAGS, ifr) < 0 || ifr->ifr_ifru.ifru_flags & IFF_LOOPBACK))
+@@ -197,6 +203,12 @@
+ 			fd = socket(AF_INET, SOCK_DGRAM, 0);
+ 			if (fd < 0)
+ 				continue;
++			/* Foxconn added start Bernie 06/01/2016 */
++			/* DLNA should only work on br0 interface...*/
++			if (strcmp(p->ifa_name, "br0") != 0)
++				continue;
++			/* Foxconn added end Bernie 06/01/2016 */
++				
+ 			strncpy(ifr.ifr_name, p->ifa_name, IFNAMSIZ);
+ 			ret = ioctl(fd, SIOCGIFHWADDR, &ifr);
+ 			close(fd);
+@@ -235,6 +247,12 @@
+ 
+ 	for (if_idx = ifaces; if_idx->if_index; if_idx++)
+ 	{
++		/* Foxconn added start pling 09/30/2013 */
++		/* DLNA should only work on br0 interface...*/
++		if (strcmp(if_idx->if_name, "br0") != 0)
++			continue;
++		/* Foxconn added end pling 09/30/2013 */
++	
+ 		strncpyt(ifr.ifr_name, if_idx->if_name, IFNAMSIZ);
+ 		if (ioctl(fd, SIOCGIFFLAGS, &ifr) < 0)
+ 			continue;
+diff -Naur minidlna/minidlna-1.1.5/image_utils.c minidlna_r146653/minidlna-1.1.5/image_utils.c
+--- minidlna/minidlna-1.1.5/image_utils.c	2020-09-23 18:04:38.616830706 +0800
++++ minidlna_r146653/minidlna-1.1.5/image_utils.c	2020-09-23 18:02:15.179088588 +0800
+@@ -460,6 +460,18 @@
+ 	jpeg_start_decompress(&cinfo);
+ 	w = cinfo.output_width;
+ 	h = cinfo.output_height;
++/* Added by Foxconn Antony start 2016/08/10 Santiy check if the request memory is larger than we expected
++    Or this malloc will run out of usable memory */
++
++  if((w * h) >0x100000)
++  {
++		jpeg_destroy_decompress(&cinfo);
++		if( is_file )
++			fclose(file);
++		return NULL;
++  }
++/* Added by Foxconn Antony end 2016/08/10 */
++
+ 	vimage = (rotate & (ROTATE_90|ROTATE_270)) ? image_new(h, w) : image_new(w, h);
+ 	if(!vimage)
+ 	{
+diff -Naur minidlna/minidlna-1.1.5/inotify.c minidlna_r146653/minidlna-1.1.5/inotify.c
+--- minidlna/minidlna-1.1.5/inotify.c	2020-09-23 18:04:38.576830218 +0800
++++ minidlna_r146653/minidlna-1.1.5/inotify.c	2020-09-23 18:02:15.283089847 +0800
+@@ -38,6 +38,11 @@
+ #include "linux/inotify-syscalls.h"
+ #endif
+ #include "libav.h"
++/* Foxconn added start Bernie 06/01/2016 */
++#include "../ffmpeg-3.4.1/libavutil/avutil.h"
++#include "../ffmpeg-3.4.1/libavcodec/avcodec.h"
++#include "../ffmpeg-3.4.1/libavformat/avformat.h"
++/* Foxconn added end Bernie 06/01/2016 */
+ 
+ #include "upnpglobalvars.h"
+ #include "inotify.h"
+@@ -650,8 +655,11 @@
+ 	int length, i = 0;
+ 	char * esc_name = NULL;
+ 	struct stat st;
+-        
+-	pollfds[0].fd = inotify_init();
++ 
++/* Foxconn modify start, Bernie 06/01/2016 */       
++//	pollfds[0].fd = inotify_init();
++	pollfds[0].fd = inotify_init1(IN_CLOEXEC);
++/* Foxconn modify end, Bernie 06/01/2016 */		
+ 	pollfds[0].events = POLLIN;
+ 
+ 	if ( pollfds[0].fd < 0 )
+@@ -716,10 +724,15 @@
+ 				else if ( (event->mask & (IN_CLOSE_WRITE|IN_MOVED_TO|IN_CREATE)) &&
+ 				          (lstat(path_buf, &st) == 0) )
+ 				{
+-					if( (event->mask & (IN_MOVED_TO|IN_CREATE)) && (S_ISLNK(st.st_mode) || st.st_nlink > 1) )
++/* Foxconn modify start, Bernie 06/06/2016 @ The original code can not establish a hidden directory.*/
++//					if( (event->mask & (IN_MOVED_TO|IN_CREATE)) && (S_ISLNK(st.st_mode) || st.st_nlink > 1) )
++//					{
++//						DPRINTF(E_DEBUG, L_INOTIFY, "The %s link %s was %s.\n",
++//							(S_ISLNK(st.st_mode) ? "symbolic" : "hard"),				
++					if( S_ISLNK(st.st_mode) )
+ 					{
+-						DPRINTF(E_DEBUG, L_INOTIFY, "The %s link %s was %s.\n",
+-							(S_ISLNK(st.st_mode) ? "symbolic" : "hard"),
++						DPRINTF(E_DEBUG, L_INOTIFY, "The symbolic link %s was %s.\n",
++/* Foxconn modify start, Bernie 06/06/2016 */						
+ 							path_buf, (event->mask & IN_MOVED_TO ? "moved here" : "created"));
+ 						if( stat(path_buf, &st) == 0 && S_ISDIR(st.st_mode) )
+ 							inotify_insert_directory(pollfds[0].fd, esc_name, path_buf);
+diff -Naur minidlna/minidlna-1.1.5/libav.h minidlna_r146653/minidlna-1.1.5/libav.h
+--- minidlna/minidlna-1.1.5/libav.h	2020-09-23 18:04:38.628830852 +0800
++++ minidlna_r146653/minidlna-1.1.5/libav.h	2020-09-23 18:02:15.191088733 +0800
+@@ -57,6 +57,12 @@
+ #include <avformat.h>
+ #endif
+ 
++/* Foxconn modify start, Bernie 06/01/2016 */
++#include "../ffmpeg-3.4.1/libavutil/avutil.h"
++#include "../ffmpeg-3.4.1/libavcodec/avcodec.h"
++#include "../ffmpeg-3.4.1/libavformat/avformat.h"
++/* Foxconn modify end, Bernie 06/01/2016 */
++
+ #ifndef FF_PROFILE_H264_BASELINE
+ #define FF_PROFILE_H264_BASELINE 66
+ #endif
+@@ -69,9 +75,11 @@
+ #ifndef FF_PROFILE_H264_HIGH
+ #define FF_PROFILE_H264_HIGH 100
+ #endif
+-#ifndef FF_PROFILE_SKIP
++/* Foxconn modify start, Bernie 06/01/2016 */
++//#ifndef FF_PROFILE_SKIP
+ #define FF_PROFILE_SKIP -100
+-#endif
++//#endif
++/* Foxconn modify end, Bernie 06/01/2016 */
+ 
+ #if LIBAVCODEC_VERSION_MAJOR < 53
+ #define AVMEDIA_TYPE_AUDIO CODEC_TYPE_AUDIO
+diff -Naur minidlna/minidlna-1.1.5/log.h minidlna_r146653/minidlna-1.1.5/log.h
+--- minidlna/minidlna-1.1.5/log.h	2020-09-23 18:04:38.616830706 +0800
++++ minidlna_r146653/minidlna-1.1.5/log.h	2020-09-23 18:02:15.179088588 +0800
+@@ -49,7 +49,7 @@
+ extern void log_err(int level, enum _log_facility facility, char *fname, int lineno, char *fmt, ...)
+ 	__attribute__((__format__ (__printf__, 5, 6)));
+ 
+-#define DPRINTF(level, facility, fmt, arg...) do { log_err(level, facility, __FILE__, __LINE__, fmt, ##arg); } while (0)
+-
++//#define DPRINTF(level, facility, fmt, arg...) do { log_err(level, facility, __FILE__, __LINE__, fmt, ##arg); } while (0)
++#define DPRINTF(level, facility, fmt, arg...) 
+ 
+ #endif /* __ERR_H__ */
+diff -Naur minidlna/minidlna-1.1.5/metadata.c minidlna_r146653/minidlna-1.1.5/metadata.c
+--- minidlna/minidlna-1.1.5/metadata.c	2020-09-23 18:04:38.620830754 +0800
++++ minidlna_r146653/minidlna-1.1.5/metadata.c	2020-09-23 18:02:15.183088636 +0800
+@@ -31,8 +31,12 @@
+ #include <libexif/exif-loader.h>
+ #include <jpeglib.h>
+ #include <setjmp.h>
++/* Foxconn added start Bernie 06/01/2016 */
++#include "../ffmpeg-3.4.1/libavutil/avutil.h"
++#include "../ffmpeg-3.4.1/libavcodec/avcodec.h"
++#include "../ffmpeg-3.4.1/libavformat/avformat.h"
++/* Foxconn added end Bernie 06/01/2016 */
+ #include "libav.h"
+-
+ #include "upnpglobalvars.h"
+ #include "tagutils/tagutils.h"
+ #include "image_utils.h"
+@@ -714,6 +718,7 @@
+ 	basepath = basename(path_cpy);
+ 	if( !vc )
+ 	{
++printf("not a video file\n");	
+ 		/* This must not be a video file. */
+ 		lav_close(ctx);
+ 		if( !is_audio(path) )
+diff -Naur minidlna/minidlna-1.1.5/minidlna.c minidlna_r146653/minidlna-1.1.5/minidlna.c
+--- minidlna/minidlna-1.1.5/minidlna.c	2020-09-23 18:04:38.620830754 +0800
++++ minidlna_r146653/minidlna-1.1.5/minidlna.c	2020-09-23 18:02:15.183088636 +0800
+@@ -274,7 +274,10 @@
+ 			logname = pwent->pw_name;
+ 	}
+ #endif
+-	snprintf(buf+off, len-off, "%s", logname?logname:"Unknown");
++/* Modify by Foxconn Antony start 02/17/2012 set the properly friendly name */
++//	snprintf(buf+off, len-off, "%s", logname?logname:"Unknown");
++	snprintf(buf+off, len-off, "%s", logname?logname:"ReadyShare");
++/* Modify by Foxconn Antony end 02/17/2012 */
+ #endif
+ }
+ 
+@@ -348,7 +351,9 @@
+ 	}
+ 
+ 	ret = db_upgrade(db);
+-	if (ret != 0)
++/* Foxconn modified start Bernie 06/01/2016 */	
++	if (1)
++/* Foxconn modifed end Bernie 06/01/2016 */	
+ 	{
+ rescan:
+ 		if (ret < 0)
+@@ -376,19 +381,51 @@
+ 		open_db(&db);
+ 		if (*scanner_pid == 0) /* child (scanner) process */
+ 		{
++			// Foxconn edit start
++			char vfs_cache_pressure[16] = {0};
++			char cmd[64] = {0}, data[16] = {0};
++
++			FILE *fp = NULL;
++
++			sprintf(cmd, "%s", "cat /proc/sys/vm/vfs_cache_pressure");
++			fp = popen(cmd, "r");
++			if (fp)
++			{
++				if (fgets(data, sizeof(data), fp) != NULL)
++				{
++					strcpy(vfs_cache_pressure, data);
++					vfs_cache_pressure[strlen(vfs_cache_pressure) - 1] = '\0';
++				}
++				pclose(fp);
++			}
++			else
++				perror("Failed to get vfs_cache_pressure settings");
++			system("echo 200 > /proc/sys/vm/vfs_cache_pressure");
++			// Foxconn edit end
++
+ 			start_scanner();
+ 			sqlite3_close(db);
++			printf("\n\n\n\n%d,minidlan:scan finished\n\n\n",__LINE__);	
+ 			log_close();
+ 			freeoptions();
+ 			free(children);
++
++			// Foxconn edit start
++			memset(cmd, 0x0, sizeof(cmd));
++			sprintf(cmd, "echo %s > /proc/sys/vm/vfs_cache_pressure", vfs_cache_pressure);
++			system(cmd);
++			// Foxconn edit end
++
+ 			exit(EXIT_SUCCESS);
+ 		}
+ 		else if (*scanner_pid < 0)
+ 		{
+ 			start_scanner();
++			printf("\n\n\n\n%d,minidlan:scan finished\n\n\n",__LINE__);	
+ 		}
+ #else
+ 		start_scanner();
++		printf("\n\n\n\n%d,minidlan:scan finished\n\n\n",__LINE__);	
+ #endif
+ 	}
+ }
+@@ -491,7 +528,7 @@
+ 	int debug_flag = 0;
+ 	int verbose_flag = 0;
+ 	int options_flag = 0;
+-	struct sigaction sa;
++	struct sigaction sa,sa2;
+ 	const char * presurl = NULL;
+ 	const char * optionsfile = "/etc/minidlna.conf";
+ 	char mac_str[13];
+@@ -500,6 +537,7 @@
+ 	char buf[PATH_MAX];
+ 	char log_str[75] = "general,artwork,database,inotify,scanner,metadata,http,ssdp,tivo=warn";
+ 	char *log_level = NULL;
++  sigset_t blockMask, emptyMask;	
+ 	struct media_dir_s *media_dir;
+ 	int ifaces = 0;
+ 	media_types types;
+@@ -555,8 +593,6 @@
+ 						MAX_LAN_ADDR, word);
+ 					break;
+ 				}
+-				while (isspace(*word))
+-					word++;
+ 				runtime_vars.ifaces[ifaces++] = word;
+ 			}
+ 			break;
+@@ -746,7 +782,7 @@
+ 	if (log_path[0] == '\0')
+ 	{
+ 		if (db_path[0] == '\0')
+-			strncpyt(log_path, DEFAULT_LOG_PATH, PATH_MAX);
++			strncpyt(log_path, "/tmp/log", PATH_MAX);
+ 		else
+ 			strncpyt(log_path, db_path, PATH_MAX);
+ 	}
+@@ -961,6 +997,14 @@
+ 		DPRINTF(E_FATAL, L_GENERAL, "Failed to set %s handler. EXITING.\n", "SIGINT");
+ 	if (signal(SIGPIPE, SIG_IGN) == SIG_ERR)
+ 		DPRINTF(E_FATAL, L_GENERAL, "Failed to set %s handler. EXITING.\n", "SIGPIPE");
++
++  sigemptyset(&blockMask);
++  sigaddset(&blockMask, SIGCHLD);
++  if (sigprocmask(SIG_UNBLOCK, &blockMask, NULL) == -1)
++  {
++  	printf("failed to unlock SIGCHLD in minidna.exe\n");
++  }
++
+ 	if (signal(SIGHUP, &sighup) == SIG_ERR)
+ 		DPRINTF(E_FATAL, L_GENERAL, "Failed to set %s handler. EXITING.\n", "SIGHUP");
+ 	signal(SIGUSR1, &sigusr1);
+@@ -1026,7 +1070,8 @@
+ 	ret = init(argc, argv);
+ 	if (ret != 0)
+ 		return 1;
+-
++	
++	printf("\n%s,%d, Starting version 1.1.5\n",__FUNCTION__,__LINE__);
+ 	DPRINTF(E_WARN, L_GENERAL, "Starting " SERVER_NAME " version " MINIDLNA_VERSION ".\n");
+ 	if (sqlite3_libversion_number() < 3005001)
+ 	{
+@@ -1069,6 +1114,8 @@
+ 		DPRINTF(E_FATAL, L_GENERAL, "Failed to open socket for HTTP. EXITING\n");
+ 	DPRINTF(E_WARN, L_GENERAL, "HTTP listening on port %d\n", runtime_vars.port);
+ 
++	reload_ifaces(0);   /* do it here so tivo_bcast addr can be init properly */
++
+ #ifdef TIVO_SUPPORT
+ 	if (GETFLAG(TIVO_MASK))
+ 	{
+@@ -1088,7 +1135,7 @@
+ 	}
+ #endif
+ 
+-	reload_ifaces(0);
++	//reload_ifaces(0);
+ 	lastnotifytime.tv_sec = time(NULL) + runtime_vars.notify_interval;
+ 
+ 	/* main loop */
+@@ -1254,31 +1301,36 @@
+ 			struct sockaddr_in clientname;
+ 			clientnamelen = sizeof(struct sockaddr_in);
+ 			shttp = accept(shttpl, (struct sockaddr *)&clientname, &clientnamelen);
+-			if (shttp<0)
+-			{
+-				DPRINTF(E_ERROR, L_GENERAL, "accept(http): %s\n", strerror(errno));
+-			}
++			if(!is_disk_mounted())
++			    close(shttp);
+ 			else
+ 			{
+-				struct upnphttp * tmp = 0;
+-				DPRINTF(E_DEBUG, L_GENERAL, "HTTP connection from %s:%d\n",
+-					inet_ntoa(clientname.sin_addr),
+-					ntohs(clientname.sin_port) );
+-				/*if (fcntl(shttp, F_SETFL, O_NONBLOCK) < 0) {
+-					DPRINTF(E_ERROR, L_GENERAL, "fcntl F_SETFL, O_NONBLOCK\n");
+-				}*/
+-				/* Create a new upnphttp object and add it to
+-				 * the active upnphttp object list */
+-				tmp = New_upnphttp(shttp);
+-				if (tmp)
++				if (shttp<0)
+ 				{
+-					tmp->clientaddr = clientname.sin_addr;
+-					LIST_INSERT_HEAD(&upnphttphead, tmp, entries);
++					DPRINTF(E_ERROR, L_GENERAL, "accept(http): %s\n", strerror(errno));
+ 				}
+ 				else
+ 				{
+-					DPRINTF(E_ERROR, L_GENERAL, "New_upnphttp() failed\n");
+-					close(shttp);
++					struct upnphttp * tmp = 0;
++					DPRINTF(E_DEBUG, L_GENERAL, "HTTP connection from %s:%d\n",
++						inet_ntoa(clientname.sin_addr),
++						ntohs(clientname.sin_port) );
++					/*if (fcntl(shttp, F_SETFL, O_NONBLOCK) < 0) {
++						DPRINTF(E_ERROR, L_GENERAL, "fcntl F_SETFL, O_NONBLOCK\n");
++					}*/
++					/* Create a new upnphttp object and add it to
++					 * the active upnphttp object list */
++					tmp = New_upnphttp(shttp);
++					if (tmp)
++					{
++						tmp->clientaddr = clientname.sin_addr;
++						LIST_INSERT_HEAD(&upnphttphead, tmp, entries);
++					}
++					else
++					{
++						DPRINTF(E_ERROR, L_GENERAL, "New_upnphttp() failed\n");
++						close(shttp);
++					}
+ 				}
+ 			}
+ 		}
+diff -Naur minidlna/minidlna-1.1.5/minidlna.conf minidlna_r146653/minidlna-1.1.5/minidlna.conf
+--- minidlna/minidlna-1.1.5/minidlna.conf	2020-09-23 18:04:38.580830267 +0800
++++ minidlna_r146653/minidlna-1.1.5/minidlna.conf	2020-09-23 18:02:15.287089895 +0800
+@@ -15,17 +15,22 @@
+ #   + "V" for video  (eg. media_dir=V,/home/jmaggard/Videos)
+ #   + "P" for images (eg. media_dir=P,/home/jmaggard/Pictures)
+ #   + "PV" for pictures and video (eg. media_dir=PV,/home/jmaggard/digital_camera)
+-media_dir=/opt
++#media_dir=/tmp/mnt/usb0/part1
++media_dir=/tmp/shares
+ 
+ # set this to merge all media_dir base contents into the root container
+ # note: the default is no
+ #merge_media_dirs=no
++#Foxconn add start by lawrence 2013/02/06 fixed all USB folder can acess
++# set admin floder 
++media_dir_admin=
++
+ 
+ # set this if you want to customize the name that shows up on your clients
+-#friendly_name=My DLNA Server
++friendly_name=WNDR4000
+ 
+ # set this if you would like to specify the directory where you want MiniDLNA to store its database and album art cache
+-#db_dir=/var/cache/minidlna
++db_dir=/tmp/shares/USB_Storage/.ReadyDLNA
+ 
+ # set this if you would like to specify the directory where you want MiniDLNA to store its log file
+ #log_dir=/var/log
+@@ -51,10 +56,10 @@
+ strict_dlna=no
+ 
+ # default presentation url is http address on port 80
+-#presentation_url=http://www.mylan/index.php
++presentation_url=http://www.routerlogin.net
+ 
+ # notify interval in seconds. default is 895 seconds.
+-notify_interval=900
++notify_interval=890
+ 
+ # serial and model number the daemon will report to clients
+ # in its XML description
+diff -Naur minidlna/minidlna-1.1.5/minidlnatypes.h minidlna_r146653/minidlna-1.1.5/minidlnatypes.h
+--- minidlna/minidlna-1.1.5/minidlnatypes.h	2020-09-23 18:04:38.616830706 +0800
++++ minidlna_r146653/minidlna-1.1.5/minidlnatypes.h	2020-09-23 18:02:15.179088588 +0800
+@@ -69,7 +69,8 @@
+ enum file_types {
+ 	TYPE_UNKNOWN,
+ 	TYPE_DIR,
+-	TYPE_FILE
++	TYPE_FILE,
++	TYPE_LINK
+ };
+ 
+ struct media_dir_s {
+diff -Naur minidlna/minidlna-1.1.5/minissdp.c minidlna_r146653/minidlna-1.1.5/minissdp.c
+--- minidlna/minidlna-1.1.5/minissdp.c	2020-09-23 18:04:38.620830754 +0800
++++ minidlna_r146653/minidlna-1.1.5/minissdp.c	2020-09-23 18:02:15.183088636 +0800
+@@ -269,7 +269,11 @@
+ 	int l, n, dup, i=0;
+ 	unsigned int lifetime;
+ 	char bufr[512];
++  #if 1
+ 
++  if(!is_disk_mounted())
++      return;
++  #endif
+ 	memset(&sockname, 0, sizeof(struct sockaddr_in));
+ 	sockname.sin_family = AF_INET;
+ 	sockname.sin_port = htons(SSDP_PORT);
+@@ -279,7 +283,7 @@
+ 	for (dup = 0; dup < 2; dup++)
+ 	{
+ 		if (dup)
+-			_usleep(200000);
++			sleep(1);
+ 		i = 0;
+ 		while (known_service_types[i])
+ 		{
+diff -Naur minidlna/minidlna-1.1.5/options.c minidlna_r146653/minidlna-1.1.5/options.c
+--- minidlna/minidlna-1.1.5/options.c	2020-09-23 18:04:38.616830706 +0800
++++ minidlna_r146653/minidlna-1.1.5/options.c	2020-09-23 18:02:15.179088588 +0800
+@@ -38,6 +38,8 @@
+ struct option * ary_options = NULL;
+ int num_options = 0;
+ 
++char *adminfolder[256]; //add by lawrence save USB admin floder name ps:max folder number is 255
++
+ static const struct {
+ 	enum upnpconfigoptions id;
+ 	const char * name;
+@@ -62,6 +64,7 @@
+ 	{ ENABLE_DLNA_STRICT, "strict_dlna" },
+ 	{ ROOT_CONTAINER, "root_container" },
+ 	{ USER_ACCOUNT, "user" },
++	{ UPNPMEDIADIRADMIN, "media_dir_admin" }, /*add by lawrence save admin folder  */
+ 	{ FORCE_SORT_CRITERIA, "force_sort_criteria" },
+ 	{ MAX_CONNECTIONS, "max_connections" },
+ 	{ MERGE_MEDIA_DIRS, "merge_media_dirs" }
+@@ -80,6 +83,9 @@
+ 	int i;
+ 	enum upnpconfigoptions id;
+ 
++
++    int j;
++   
+ 	if(!fname || *fname == '\0')
+ 		return -1;
+ 
+@@ -92,6 +98,14 @@
+ 	if(!(hfile = fopen(fname, "r")))
+ 		return -1;
+ 
++
++	/*Foxconn add start by lawrence 2013/02/06 fixed all USB folder can acess*/
++    //Setting empty of adminfolder array
++    for(j=0;j<(sizeof(adminfolder)/sizeof(adminfolder[0]));j++)
++	  adminfolder[j]='\0';
++    j=0;
++	/*Foxconn add start by lawrence 2013/02/06 fixed all USB folder can acess*/
++	
+ 	while(fgets(buffer, sizeof(buffer), hfile))
+ 	{
+ 		linenum++;
+@@ -171,7 +185,17 @@
+ 			ary_options[num_options-1].id = id;
+ 			strncpyt(ary_options[num_options-1].value, value, MAX_OPTION_VALUE_LEN);
+ 		}
+-
++       
++		/*Foxconn add start by lawrence 2013/02/06 fixed all folder can acess*/
++		//save the admin folder to adminfolder 
++		if(strcmp(name,"media_dir_admin")==0)
++		{
++		   adminfolder[j]=ary_options[num_options-1].value;
++		   j++;
++		}
++		/*Foxconn add start by lawrence 2013/02/06 fixed all folder can acess*/
++		
++		
+ 	}
+ 	
+ 	fclose(hfile);
+diff -Naur minidlna/minidlna-1.1.5/options.h minidlna_r146653/minidlna-1.1.5/options.h
+--- minidlna/minidlna-1.1.5/options.h	2020-09-23 18:04:38.616830706 +0800
++++ minidlna_r146653/minidlna-1.1.5/options.h	2020-09-23 18:02:15.179088588 +0800
+@@ -55,6 +55,7 @@
+ 	ENABLE_DLNA_STRICT,		/* strictly adhere to DLNA specs */
+ 	ROOT_CONTAINER,			/* root ObjectID (instead of "0") */
+ 	USER_ACCOUNT,			/* user account to run as */
++	UPNPMEDIADIRADMIN,			/*add by lawrence save admin folder  */	
+ 	FORCE_SORT_CRITERIA,		/* force sorting by a given sort criteria */
+ 	MAX_CONNECTIONS,		/* maximum number of simultaneous connections */
+ 	MERGE_MEDIA_DIRS		/* don't add an extra directory level when there are multiple media dirs */
+diff -Naur minidlna/minidlna-1.1.5/process.c minidlna_r146653/minidlna-1.1.5/process.c
+--- minidlna/minidlna-1.1.5/process.c	2020-09-23 18:04:38.620830754 +0800
++++ minidlna_r146653/minidlna-1.1.5/process.c	2020-09-23 18:02:15.183088636 +0800
+@@ -163,8 +163,12 @@
+ 			exit(0);
+ 	}
+ #else
++/* Foxconn modify start, Bernie 06/01/2016 */
++/*
+ 	if( daemon(0, 0) < 0 )
+ 		perror("daemon()");
++*/
++/* Foxconn modify end, Bernie 06/01/2016 */
+ 	pid = getpid();
+ #endif
+ 	return pid;
+diff -Naur minidlna/minidlna-1.1.5/scanner.c minidlna_r146653/minidlna-1.1.5/scanner.c
+--- minidlna/minidlna-1.1.5/scanner.c	2020-09-23 18:04:38.640830998 +0800
++++ minidlna_r146653/minidlna-1.1.5/scanner.c	2020-09-23 18:02:15.203088878 +0800
+@@ -58,6 +58,8 @@
+ 
+ int valid_cache = 0;
+ 
++extern char *adminfolder[256];
++
+ struct virtual_item
+ {
+ 	int64_t objectID;
+@@ -626,7 +628,7 @@
+ {
+ #if HAVE_STRUCT_DIRENT_D_TYPE
+ 	return ( (d->d_type == DT_DIR) ||
+-	         (d->d_type == DT_LNK) ||
++//	         (d->d_type == DT_LNK) ||
+ 	         (d->d_type == DT_UNKNOWN)
+ 	       );
+ #else
+@@ -713,6 +715,7 @@
+ 	       );
+ }
+ 
++#define MAX_FILE_NUMBER 25000
+ static void
+ ScanDirectory(const char *dir, const char *parent, media_types dir_types)
+ {
+@@ -720,9 +723,15 @@
+ 	int i, n, startID = 0;
+ 	char *full_path;
+ 	char *name = NULL;
+-	static long long unsigned int fileno = 0;
++	static unsigned int fileno = 0;
+ 	enum file_types type;
+ 
++    int k;
++    int adminflag=0; //add by lawrence adminflag=1 the folder is admin. 
++
++    if(fileno >= MAX_FILE_NUMBER) // stop scanner
++		return;
++		
+ 	DPRINTF(parent?E_INFO:E_WARN, L_SCANNER, _("Scanning %s\n"), dir);
+ 	switch( dir_types )
+ 	{
+@@ -780,6 +789,33 @@
+ 		type = TYPE_UNKNOWN;
+ 		snprintf(full_path, PATH_MAX, "%s/%s", dir, namelist[i]->d_name);
+ 		name = escape_tag(namelist[i]->d_name, 1);
++		
++		/*Foxconn add start by lawrence 2013/02/06 fixed all USB folder can acess*/
++		// if the folder is admin then set adminflag=1
++		for(k=0;k<(sizeof(adminfolder)/sizeof(adminfolder[0]));k++)
++		{
++		 if(adminfolder[k]!='\0')
++		  {
++		  
++		  	//printf("************************************\n");
++		    //printf("adminfolder[%d]=%s\n",k,adminfolder[k]); 
++		    //printf("************************************\n");
++		  
++		     if(strcmp(full_path,adminfolder[k])==0)
++		     {
++			     adminflag=1;
++				 break;
++		     }
++		  }
++		}
++
++		if(adminflag==1)
++		{
++		   adminflag=0;
++		   continue;
++		}
++		/*Foxconn add start by lawrence 2013/02/06 fixed all USB folder can acess*/
++			
+ 		if( is_dir(namelist[i]) == 1 )
+ 		{
+ 			type = TYPE_DIR;
+@@ -803,7 +839,16 @@
+ 		else if( type == TYPE_FILE && (access(full_path, R_OK) == 0) )
+ 		{
+ 			if( insert_file(name, full_path, THISORNUL(parent), i+startID, dir_types) == 0 )
++            {
+ 				fileno++;
++                if(fileno >= MAX_FILE_NUMBER){
++                    /*stop scanner*/
++                    n = 0;
++                }
++            }
++            // Foxconn edit start
++            sleep(1);
++            // Foxconn edit end
+ 		}
+ 		free(name);
+ 		free(namelist[i]);
+@@ -847,6 +892,7 @@
+ 	_notify_start();
+ 
+ 	setlocale(LC_COLLATE, "");
++printf("minidlan :scan files\n");
+ 
+ 	av_register_all();
+ 	av_log_set_level(AV_LOG_PANIC);
+diff -Naur minidlna/minidlna-1.1.5/upnpglobalvars.c minidlna_r146653/minidlna-1.1.5/upnpglobalvars.c
+--- minidlna/minidlna-1.1.5/upnpglobalvars.c	2020-09-23 18:04:38.620830754 +0800
++++ minidlna_r146653/minidlna-1.1.5/upnpglobalvars.c	2020-09-23 18:02:15.183088636 +0800
+@@ -60,7 +60,7 @@
+ struct runtime_vars_s runtime_vars;
+ uint32_t runtime_flags = INOTIFY_MASK;
+ 
+-const char *pidfilename = "/var/run/minidlna/minidlna.pid";
++const char *pidfilename = "/var/run/minidlna.pid";
+ 
+ char uuidvalue[] = "uuid:00000000-0000-0000-0000-000000000000";
+ char modelname[MODELNAME_MAX_LEN] = ROOTDEV_MODELNAME;
+diff -Naur minidlna/minidlna-1.1.5/upnpsoap.c minidlna_r146653/minidlna-1.1.5/upnpsoap.c
+--- minidlna/minidlna-1.1.5/upnpsoap.c	2020-09-23 18:04:38.696831680 +0800
++++ minidlna_r146653/minidlna-1.1.5/upnpsoap.c	2020-09-23 18:02:15.279089798 +0800
+@@ -1927,9 +1927,14 @@
+ 	if( ObjectID && PosSecond )
+ 	{
+ 		int ret;
++/* PSV-2017-3056 Fix: Unauthenticated UPNP/SOAP Request to minidlnad */
++		int sec = atoi(PosSecond);
++		if (sec < 30)
++			sec = 0;
+ 		ret = sql_exec(db, "INSERT OR REPLACE into BOOKMARKS"
+ 		                   " VALUES "
+-		                   "((select DETAIL_ID from OBJECTS where OBJECT_ID = '%q'), %q)", ObjectID, PosSecond);
++		                   "((select DETAIL_ID from OBJECTS where OBJECT_ID = '%q'), %d)", ObjectID, sec);
++/* PSV-2017-3056 Fix: Unauthenticated UPNP/SOAP Request to minidlnad */
+ 		if( ret != SQLITE_OK )
+ 			DPRINTF(E_WARN, L_METADATA, "Error setting bookmark %s on ObjectID='%s'\n", PosSecond, ObjectID);
+ 		BuildSendAndCloseSoapResp(h, resp, sizeof(resp)-1);
+diff -Naur minidlna/minidlna-1.1.5/utils.c minidlna_r146653/minidlna-1.1.5/utils.c
+--- minidlna/minidlna-1.1.5/utils.c	2020-09-23 18:04:38.696831680 +0800
++++ minidlna_r146653/minidlna-1.1.5/utils.c	2020-09-23 18:02:15.279089798 +0800
+@@ -386,6 +386,7 @@
+ #ifdef TIVO_SUPPORT
+ 		ends_with(file, ".TiVo") ||
+ #endif
++        ends_with(file, ".m2v") ||     /* Foxconn add by Hank to support .m2v, 2012/04/12 */
+ 		ends_with(file, ".mov") || ends_with(file, ".3gp"));
+ }
+ 
+@@ -465,6 +466,10 @@
+ 				}
+ 			}
+ 			stat(path, &entry);
++/* Foxconn modify start, Bernie 06/01/2016 */			
++			type = TYPE_LINK;
++			return type;
++/* Foxconn modify end, Bernie 06/01/2016 */			
+ 		}
+ 
+ 		if( S_ISDIR(entry.st_mode) )
+@@ -503,3 +508,29 @@
+ 	return type;
+ }
+ 
++#if 1
++int is_disk_mounted()
++{
++  FILE *fp;
++  char buffer[128];
++  /* see if there is any pen drive mount */
++  system("df > /tmp/df");
++  fp=fopen("/tmp/df","r");
++  
++  if(fp)
++  {
++      while(!feof(fp))
++      {
++          fgets(buffer,128,fp);
++          if(strncmp("/dev/sd",buffer,strlen("/dev/sd"))==0)
++          {
++              fclose(fp);
++              return 1;
++          }
++      }
++      fclose(fp);
++  }
++  return 0;
++  
++}
++#endif
+\ No newline at end of file
+diff -Naur minidlna/minidlna-1.1.5/utils.h minidlna_r146653/minidlna-1.1.5/utils.h
+--- minidlna/minidlna-1.1.5/utils.h	2020-09-23 18:04:38.696831680 +0800
++++ minidlna_r146653/minidlna-1.1.5/utils.h	2020-09-23 18:02:15.279089798 +0800
+@@ -96,4 +96,7 @@
+ int make_dir(char * path, mode_t mode);
+ unsigned int DJBHash(uint8_t *data, int len);
+ 
++/* Foxconn modify start, Bernie 06/01/2016 */
++int is_disk_mounted();
++/* Foxconn modify end, Bernie 06/01/2016 */
+ #endif

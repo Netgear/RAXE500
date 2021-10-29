@@ -1,0 +1,10 @@
+openplatVersion: 1.0
+pkgName: openwrtEE
+version: 15.1
+vendor: OpenWrt Project
+description: OpenWrt Execution Environment
+pkg-dependency:
+app-name: openwrt
+app-mediaType: ee_tarball
+app-tarballMngrExecutable: beepd
+app-directory: ./openwrtEEDir

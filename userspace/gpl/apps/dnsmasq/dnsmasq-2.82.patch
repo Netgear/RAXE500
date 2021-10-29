@@ -1,0 +1,16 @@
+--- orig_dnsmasq-2.82/Makefile	2020-07-20 04:54:44.000000000 +0800
++++ dnsmasq-2.82/Makefile	2020-08-05 13:52:31.470234871 +0800
+@@ -68,9 +68,10 @@ gmp_libs =      `echo $(COPTS) | $(top)/
+ sunos_libs =    `if uname | grep SunOS >/dev/null 2>&1; then echo -lsocket -lnsl -lposix4; fi`
+ version =     -DVERSION='\"`$(top)/bld/get-version $(top)`\"'
+ 
+-sum?=$(shell $(CC) -DDNSMASQ_COMPILE_OPTS $(COPTS) -E $(top)/$(SRC)/dnsmasq.h | ( md5sum 2>/dev/null || md5 ) | cut -f 1 -d ' ')
+-sum!=$(CC) -DDNSMASQ_COMPILE_OPTS $(COPTS) -E $(top)/$(SRC)/dnsmasq.h | ( md5sum 2>/dev/null || md5 ) | cut -f 1 -d ' '
+-copts_conf = .copts_$(sum)
++# brcm: disable the following lines since cross-compiling
++#sum?=$(shell $(CC) -DDNSMASQ_COMPILE_OPTS $(COPTS) -E $(top)/$(SRC)/dnsmasq.h | ( md5sum 2>/dev/null || md5 ) | cut -f 1 -d ' ')
++#sum!=$(CC) -DDNSMASQ_COMPILE_OPTS $(COPTS) -E $(top)/$(SRC)/dnsmasq.h | ( md5sum 2>/dev/null || md5 ) | cut -f 1 -d ' '
++#copts_conf = .copts_$(sum)
+ 
+ objs = cache.o rfc1035.o util.o option.o forward.o network.o \
+        dnsmasq.o dhcp.o lease.o rfc2131.o netlink.o dbus.o bpf.o \

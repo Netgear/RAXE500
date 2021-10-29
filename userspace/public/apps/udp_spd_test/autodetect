@@ -1,0 +1,4 @@
+
+condition: ifneq ($(strip $(BUILD_SPDTEST)),)
+dependson: public/libs/bdmf public/libs/bcm_spdt
+

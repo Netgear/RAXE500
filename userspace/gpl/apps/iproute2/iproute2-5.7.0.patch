@@ -1,0 +1,665 @@
+diff -rupN orig_iproute2-5.7.0/configure iproute2-5.7.0/configure
+--- orig_iproute2-5.7.0/configure	2020-06-03 11:35:00.000000000 +0800
++++ iproute2-5.7.0/configure	2020-06-22 13:43:02.157845955 +0800
+@@ -382,23 +382,28 @@ fi
+ echo -n "libc has setns: "
+ check_setns
+ 
+-echo -n "SELinux support: "
+-check_selinux
+-
+-echo -n "ELF support: "
+-check_elf
+-
+-echo -n "libmnl support: "
+-check_mnl
+-
+-echo -n "Berkeley DB: "
+-check_berkeley_db
++# brcm: no SELINUX
++#echo -n "SELinux support: "
++#check_selinux
++
++# brcm: no ELF
++#echo -n "ELF support: "
++#check_elf
++
++# brcm: no libmnl
++#echo -n "libmnl support: "
++#check_mnl
++
++# brcm: no berkeleyDB
++#echo -n "Berkeley DB: "
++#check_berkeley_db
+ 
+ echo -n "need for strlcpy: "
+ check_strlcpy
+ 
+-echo -n "libcap support: "
+-check_cap
++# brcm: we do not build a 64bit libcap, so don't link with it.
++#echo -n "libcap support: "
++#check_cap
+ 
+ echo >> $CONFIG
+ echo "%.o: %.c" >> $CONFIG
+diff -rupN orig_iproute2-5.7.0/include/uapi/linux/if.h iproute2-5.7.0/include/uapi/linux/if.h
+--- orig_iproute2-5.7.0/include/uapi/linux/if.h	2020-06-03 11:35:00.000000000 +0800
++++ iproute2-5.7.0/include/uapi/linux/if.h	2020-06-22 13:43:02.157845955 +0800
+@@ -131,6 +131,11 @@ enum net_device_flags {
+ #define IFF_ECHO			IFF_ECHO
+ #endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO */
+ 
++#ifdef BCM_HAVE_MPTCP
++#define IFF_NOMULTIPATH	0x80000		/* Disable for MPTCP 		*/
++#define IFF_MPBACKUP	0x100000	/* Use as backup path for MPTCP */
++#endif
++
+ #define IFF_VOLATILE	(IFF_LOOPBACK|IFF_POINTOPOINT|IFF_BROADCAST|IFF_ECHO|\
+ 		IFF_MASTER|IFF_SLAVE|IFF_RUNNING|IFF_LOWER_UP|IFF_DORMANT)
+ 
+diff -rupN orig_iproute2-5.7.0/include/uapi/linux/if_tunnel.h iproute2-5.7.0/include/uapi/linux/if_tunnel.h
+--- orig_iproute2-5.7.0/include/uapi/linux/if_tunnel.h	2020-06-03 11:35:00.000000000 +0800
++++ iproute2-5.7.0/include/uapi/linux/if_tunnel.h	2020-06-22 13:43:02.157845955 +0800
+@@ -112,6 +112,7 @@ struct ip_tunnel_6rd {
+ 	__be32			relay_prefix;
+ 	__u16			prefixlen;
+ 	__u16			relay_prefixlen;
++	__be32			br_addr; // brcm
+ };
+ 
+ enum {
+diff -rupN orig_iproute2-5.7.0/include/uapi/linux/posix_types.h iproute2-5.7.0/include/uapi/linux/posix_types.h
+--- orig_iproute2-5.7.0/include/uapi/linux/posix_types.h	2020-06-03 11:35:00.000000000 +0800
++++ iproute2-5.7.0/include/uapi/linux/posix_types.h	2020-06-22 13:43:02.165846053 +0800
+@@ -35,4 +35,43 @@ typedef int __kernel_mqd_t;
+ 
+ #include <asm/posix_types.h>
+ 
++#ifndef __kernel_long_t
++typedef long		__kernel_long_t;
++typedef unsigned long	__kernel_ulong_t;
++#endif
++
++#ifndef __kernel_ino_t
++typedef __kernel_ulong_t __kernel_ino_t;
++#endif
++
++#ifndef __kernel_mode_t
++typedef unsigned int	__kernel_mode_t;
++#endif
++
++#ifndef __kernel_pid_t
++typedef int		__kernel_pid_t;
++#endif
++
++#ifndef __kernel_ipc_pid_t
++typedef int		__kernel_ipc_pid_t;
++#endif
++
++#ifndef __kernel_uid_t
++typedef unsigned int	__kernel_uid_t;
++typedef unsigned int	__kernel_gid_t;
++#endif
++
++#ifndef __kernel_suseconds_t
++typedef __kernel_long_t		__kernel_suseconds_t;
++#endif
++
++#ifndef __kernel_daddr_t
++typedef int		__kernel_daddr_t;
++#endif
++
++#ifndef __kernel_uid32_t
++typedef unsigned int	__kernel_uid32_t;
++typedef unsigned int	__kernel_gid32_t;
++#endif
++
+ #endif /* _LINUX_POSIX_TYPES_H */
+diff -rupN orig_iproute2-5.7.0/include/xtables.h iproute2-5.7.0/include/xtables.h
+--- orig_iproute2-5.7.0/include/xtables.h	2020-06-03 11:35:00.000000000 +0800
++++ iproute2-5.7.0/include/xtables.h	2020-06-22 13:43:02.161846004 +0800
+@@ -32,7 +32,7 @@
+ #define IPPROTO_UDPLITE	136
+ #endif
+ 
+-#include <xtables-version.h>
++// #include <xtables-version.h>
+ 
+ struct in_addr;
+ 
+diff -rupN orig_iproute2-5.7.0/ip/ipaddress.c iproute2-5.7.0/ip/ipaddress.c
+--- orig_iproute2-5.7.0/ip/ipaddress.c	2020-06-03 11:35:00.000000000 +0800
++++ iproute2-5.7.0/ip/ipaddress.c	2020-06-22 13:43:02.161846004 +0800
+@@ -98,6 +98,10 @@ static void print_link_flags(FILE *fp, u
+ 	_PF(BROADCAST);
+ 	_PF(POINTOPOINT);
+ 	_PF(MULTICAST);
++#ifdef BCM_HAVE_MPTCP
++	_PF(NOMULTIPATH);
++	_PF(MPBACKUP);
++#endif
+ 	_PF(NOARP);
+ 	_PF(ALLMULTI);
+ 	_PF(PROMISC);
+diff -rupN orig_iproute2-5.7.0/ip/iplink.c iproute2-5.7.0/ip/iplink.c
+--- orig_iproute2-5.7.0/ip/iplink.c	2020-06-03 11:35:00.000000000 +0800
++++ iproute2-5.7.0/ip/iplink.c	2020-06-22 13:47:33.317166003 +0800
+@@ -76,6 +76,9 @@ void iplink_usage(void)
+ 		"		[ dynamic { on | off } ]\n"
+ 		"		[ multicast { on | off } ]\n"
+ 		"		[ allmulticast { on | off } ]\n"
++#ifdef BCM_HAVE_MPTCP
++		"		[ multipath { on | off | backup } ]\n"
++#endif
+ 		"		[ promisc { on | off } ]\n"
+ 		"		[ trailers { on | off } ]\n"
+ 		"		[ carrier { on | off } ]\n"
+@@ -703,6 +706,20 @@ int iplink_parse(int argc, char **argv,
+ 				req->i.ifi_flags &= ~IFF_ALLMULTI;
+ 			else
+ 				return on_off("allmulticast", *argv);
++#ifdef BCM_HAVE_MPTCP
++		} else if (strcmp(*argv, "multipath") == 0) {
++			NEXT_ARG();
++			req->i.ifi_change |= IFF_NOMULTIPATH;
++			req->i.ifi_change |= IFF_MPBACKUP;
++			if (strcmp(*argv, "on") == 0) {
++				req->i.ifi_flags &= ~IFF_NOMULTIPATH;
++			} else if (strcmp(*argv, "off") == 0) {
++				req->i.ifi_flags |= IFF_NOMULTIPATH;
++			} else if (strcmp(*argv, "backup") == 0) {
++				req->i.ifi_flags |= IFF_MPBACKUP;
++			} else
++				return on_off("multipath", *argv);
++#endif
+ 		} else if (strcmp(*argv, "promisc") == 0) {
+ 			NEXT_ARG();
+ 			req->i.ifi_change |= IFF_PROMISC;
+@@ -1374,6 +1391,12 @@ static int do_set(int argc, char **argv)
+ 				flags &= ~IFF_ALLMULTI;
+ 			else
+ 				return on_off("allmulticast", *argv);
++#ifdef BCM_HAVE_MPTCP
++		} else if (strcmp(*argv, "multipath") == 0) {
++			fprintf(stderr, "Can't set multipath flags in IOCTL_COMPAT mode.");
++
++			return -1;
++#endif
+ 		} else if (strcmp(*argv, "promisc") == 0) {
+ 			NEXT_ARG();
+ 			mask |= IFF_PROMISC;
+diff -rupN orig_iproute2-5.7.0/ip/iplink_can.c iproute2-5.7.0/ip/iplink_can.c
+--- orig_iproute2-5.7.0/ip/iplink_can.c	2020-06-03 11:35:00.000000000 +0800
++++ iproute2-5.7.0/ip/iplink_can.c	2020-06-22 13:43:02.161846004 +0800
+@@ -121,7 +121,7 @@ static int can_parse_opt(struct link_uti
+ 			if (get_u32(&bt.bitrate, *argv, 0))
+ 				invarg("invalid \"bitrate\" value\n", *argv);
+ 		} else if (matches(*argv, "sample-point") == 0) {
+-			float sp;
++			float sp=0.0f; // brcm
+ 
+ 			NEXT_ARG();
+ 			if (get_float(&sp, *argv))
+diff -rupN orig_iproute2-5.7.0/ip/iptunnel.c iproute2-5.7.0/ip/iptunnel.c
+--- orig_iproute2-5.7.0/ip/iptunnel.c	2020-06-03 11:35:00.000000000 +0800
++++ iproute2-5.7.0/ip/iptunnel.c	2020-06-22 13:43:02.161846004 +0800
+@@ -502,6 +502,14 @@ static int do_6rd(int argc, char **argv)
+ 			cmd = SIOCADD6RD;
+ 			memcpy(&ip6rd.relay_prefix, prefix.data, 4);
+ 			ip6rd.relay_prefixlen = prefix.bitlen;
++// brcm: start
++		} else if (strcmp(*argv, "6rd-br_addr") == 0) {
++			NEXT_ARG();
++			if (get_prefix(&prefix, *argv, AF_INET))
++				invarg("invalid 6rd-br_addr\n", *argv);
++			cmd = SIOCADD6RD;
++			memcpy(&ip6rd.br_addr, prefix.data, 4);
++// brcm: end
+ 		} else if (strcmp(*argv, "6rd-reset") == 0) {
+ 			cmd = SIOCDEL6RD;
+ 		} else if (strcmp(*argv, "dev") == 0) {
+diff -rupN orig_iproute2-5.7.0/lib/Makefile iproute2-5.7.0/lib/Makefile
+--- orig_iproute2-5.7.0/lib/Makefile	2020-06-03 11:35:00.000000000 +0800
++++ iproute2-5.7.0/lib/Makefile	2020-06-22 13:43:02.161846004 +0800
+@@ -1,7 +1,8 @@
+ # SPDX-License-Identifier: GPL-2.0
+ include ../config.mk
+ 
+-CFLAGS += -fPIC
++# brcm: comment out.
++# CFLAGS += -fPIC
+ 
+ UTILOBJ = utils.o rt_names.o ll_map.o ll_types.o ll_proto.o ll_addr.o \
+ 	inet_proto.o namespace.o json_writer.o json_print.o \
+@@ -9,15 +10,16 @@ UTILOBJ = utils.o rt_names.o ll_map.o ll
+ 
+ NLOBJ=libgenl.o libnetlink.o
+ 
+-all: libnetlink.a libutil.a
++# brcm: rename libutil.a to libipr2util.a
++all: libnetlink.a libipr2util.a
+ 
+ libnetlink.a: $(NLOBJ)
+ 	$(QUIET_AR)$(AR) rcs $@ $^
+ 
+-libutil.a: $(UTILOBJ) $(ADDLIB)
++libipr2util.a: $(UTILOBJ) $(ADDLIB)
+ 	$(QUIET_AR)$(AR) rcs $@ $^
+ 
+ install:
+ 
+ clean:
+-	rm -f $(NLOBJ) $(UTILOBJ) $(ADDLIB) libnetlink.a libutil.a
++	rm -f $(NLOBJ) $(UTILOBJ) $(ADDLIB) libnetlink.a libipr2util.a
+diff -rupN orig_iproute2-5.7.0/man/man8/ip-link.8.in iproute2-5.7.0/man/man8/ip-link.8.in
+--- orig_iproute2-5.7.0/man/man8/ip-link.8.in	2020-06-03 11:35:00.000000000 +0800
++++ iproute2-5.7.0/man/man8/ip-link.8.in	2020-06-22 13:43:02.161846004 +0800
+@@ -73,6 +73,10 @@ ip-link \- network device configuration
+ .br
+ .RB "[ " promisc " { " on " | " off " } ]"
+ .br
++#ifdef BCM_HAVE_MPTCP
++.BR multipath " { " on " | " off " | " backup " } |"
++.br
++#endif
+ .RB "[ " protodown " { " on " | " off " } ]"
+ .br
+ .RB "[ " trailers " { " on " | " off " } ]"
+@@ -1866,6 +1870,16 @@ change the
+ flag on the device.
+ 
+ .TP
++#ifdef BCM_HAVE_MPTCP
++.BR "multipath on ", " multipath off" or " multipath backup"
++change the
++.B MULTIPATH
++flag on the device, to enable/disable MPTCP for this interface. The backup-flag 
++will allow a subflow to be established across this interface, but only be used
++as backup.
++
++.TP
++#endif
+ .BR "protodown on " or " protodown off"
+ change the
+ .B PROTODOWN
+diff -rupN orig_iproute2-5.7.0/tc/tc_util.h  iproute2-5.7.0/tc/tc_util.h
+--- orig_iproute2-5.7.0/tc/tc_util.h	2020-06-03 11:35:00.000000000 +0800
++++ iproute2-5.7.0/tc/tc_util.h	2020-06-22 14:20:01.883364377 +0800
+@@ -25,6 +25,10 @@ enum
+ #define TCA_PRIO_MAX    (__TCA_PRIO_MAX - 1)
+ #endif
+ 
++#ifndef CLOCK_BOOTTIME
++#define CLOCK_BOOTTIME          7
++#endif
++
+ #define FILTER_NAMESZ	16
+ 
+ struct qdisc_util {
+diff -rupN orig_iproute2-5.7.0/Makefile  iproute2-5.7.0/Makefile
+--- orig_iproute2-5.7.0/Makefile	2020-06-03 11:35:00.000000000 +0800
++++ iproute2-5.7.0/Makefile	2020-06-22 14:26:31.239698229 +0800
+@@ -13,9 +13,10 @@ MAKEFLAGS += --no-print-directory
+ endif
+ 
+ PREFIX?=/usr
++# brcm: modify the LIBDIR, SBINDIR
+ LIBDIR?=$(PREFIX)/lib
+-SBINDIR?=/sbin
+-CONFDIR?=/etc/iproute2
++SBINDIR=$(INSTALL_DIR)/bin
++CONFDIR=$(INSTALL_DIR)/etc/iproute2
+ NETNS_RUN_DIR?=/var/run/netns
+ NETNS_ETC_DIR?=/etc/netns
+ DATADIR?=$(PREFIX)/share
+@@ -23,7 +24,9 @@ HDRDIR?=$(PREFIX)/include/iproute2
+ DOCDIR?=$(DATADIR)/doc/iproute2
+ MANDIR?=$(DATADIR)/man
+ ARPDDIR?=/var/lib/arpd
+-KERNEL_INCLUDE?=/usr/include
++# brcm: modify the KERNEL_INCLUDES and add LIBC_INCLUDE
++KERNEL_INCLUDES:=$(KERNEL_DIR)/include $(KERNEL_DIR)/arch/$(ARCH)/include
++LIBC_INCLUDE=$(KERNEL_DIR)/include/linux
+ BASH_COMPDIR?=$(DATADIR)/bash-completion/completions
+ 
+ # Path to db_185.h include
+@@ -41,7 +44,8 @@ DEFINES+=-DCONFDIR=\"$(CONFDIR)\" \
+          -DNETNS_ETC_DIR=\"$(NETNS_ETC_DIR)\"
+ 
+ #options for mpls
+-ADDLIB+=mpls_ntop.o mpls_pton.o
++# brcm: not support mpls
++#ADDLIB+=mpls_ntop.o mpls_pton.o
+ 
+ CC := gcc
+ HOSTCC ?= $(CC)
+@@ -55,9 +59,13 @@ WFLAGS += -Wmissing-declarations -Wold-s
+ CFLAGS := $(WFLAGS) $(CCOPTS) -I../include -I../include/uapi $(DEFINES) $(CFLAGS)
+ YACCFLAGS = -d -t -v
+ 
++#brcm extra cflags
++CFLAGS += $(APPCFLAGS)
++
+ SUBDIRS=lib ip tc bridge misc netem genl tipc devlink rdma man
+ 
+-LIBNETLINK=../lib/libutil.a ../lib/libnetlink.a
++# brcm: modify the libutil.a to libipr2util.a
++LIBNETLINK=../lib/libipr2util.a ../lib/libnetlink.a
+ LDLIBS += $(LIBNETLINK)
+ 
+ all: config.mk
+diff -rupN orig_iproute2-5.7.0/misc/ss.c iproute2-5.7.0/misc/ss.c
+--- orig_iproute2-5.7.0/misc/ss.c	2020-06-03 11:35:00.000000000 +0800
++++ iproute2-5.7.0/misc/ss.c	2020-06-22 14:30:20.526253096 +0800
+@@ -211,7 +211,9 @@ enum {
+ 	PACKET_R_DB,
+ 	NETLINK_DB,
+ 	SCTP_DB,
++#if defined(AF_VSOCK)
+ 	VSOCK_ST_DB,
++#endif
+ 	VSOCK_DG_DB,
+ 	TIPC_DB,
+ 	XDP_DB,
+@@ -223,7 +225,9 @@ enum {
+ #define ALL_DB ((1<<MAX_DB)-1)
+ #define INET_L4_DBM ((1<<TCP_DB)|(1<<UDP_DB)|(1<<DCCP_DB)|(1<<SCTP_DB))
+ #define INET_DBM (INET_L4_DBM | (1<<RAW_DB))
++#if defined(AF_VSOCK)
+ #define VSOCK_DBM ((1<<VSOCK_ST_DB)|(1<<VSOCK_DG_DB))
++#endif
+ 
+ enum {
+ 	SS_UNKNOWN,
+@@ -314,6 +318,7 @@ static const struct filter default_dbs[M
+ 		.states   = SS_CONN,
+ 		.families = FAMILY_MASK(AF_INET) | FAMILY_MASK(AF_INET6),
+ 	},
++#if defined(AF_VSOCK)
+ 	[VSOCK_ST_DB] = {
+ 		.states   = SS_CONN,
+ 		.families = FAMILY_MASK(AF_VSOCK),
+@@ -322,6 +327,7 @@ static const struct filter default_dbs[M
+ 		.states   = SS_CONN,
+ 		.families = FAMILY_MASK(AF_VSOCK),
+ 	},
++#endif
+ 	[TIPC_DB] = {
+ 		.states   = TIPC_SS_CONN,
+ 		.families = FAMILY_MASK(AF_TIPC),
+@@ -353,10 +359,12 @@ static const struct filter default_afs[A
+ 		.dbs    = (1 << NETLINK_DB),
+ 		.states = (1 << SS_CLOSE),
+ 	},
++#if defined(AF_VSOCK)
+ 	[AF_VSOCK] = {
+ 		.dbs    = VSOCK_DBM,
+ 		.states = SS_CONN,
+ 	},
++#endif
+ 	[AF_TIPC] = {
+ 		.dbs    = (1 << TIPC_DB),
+ 		.states = TIPC_SS_CONN,
+@@ -391,7 +399,11 @@ static int filter_db_parse(struct filter
+ 		ENTRY(all, UDP_DB, DCCP_DB, TCP_DB, RAW_DB,
+ 			   UNIX_ST_DB, UNIX_DG_DB, UNIX_SQ_DB,
+ 			   PACKET_R_DB, PACKET_DG_DB, NETLINK_DB,
++#if defined(AF_VSOCK)
+ 			   SCTP_DB, VSOCK_ST_DB, VSOCK_DG_DB, XDP_DB),
++#else
++			   SCTP_DB, XDP_DB),
++#endif
+ 		ENTRY(inet, UDP_DB, DCCP_DB, TCP_DB, SCTP_DB, RAW_DB),
+ 		ENTRY(udp, UDP_DB),
+ 		ENTRY(dccp, DCCP_DB),
+@@ -411,11 +423,13 @@ static int filter_db_parse(struct filter
+ 		ENTRY(packet_dgram, PACKET_DG_DB),
+ 		ENTRY(p_dgr, PACKET_DG_DB),	/* alias for packet_dgram */
+ 		ENTRY(netlink, NETLINK_DB),
++#if defined(AF_VSOCK)
+ 		ENTRY(vsock, VSOCK_ST_DB, VSOCK_DG_DB),
+ 		ENTRY(vsock_stream, VSOCK_ST_DB),
+ 		ENTRY(v_str, VSOCK_ST_DB),	/* alias for vsock_stream */
+ 		ENTRY(vsock_dgram, VSOCK_DG_DB),
+ 		ENTRY(v_dgr, VSOCK_DG_DB),	/* alias for vsock_dgram */
++#endif
+ 		ENTRY(xdp, XDP_DB),
+ #undef ENTRY
+ 	};
+@@ -912,6 +926,7 @@ static const char *proto_name(int protoc
+ 	return "???";
+ }
+ 
++#if defined(AF_VSOCK)
+ static const char *vsock_netid_name(int type)
+ {
+ 	switch (type) {
+@@ -923,6 +938,7 @@ static const char *vsock_netid_name(int
+ 		return "???";
+ 	}
+ }
++#endif
+ 
+ static const char *tipc_netid_name(int type)
+ {
+@@ -1380,9 +1396,11 @@ static void sock_state_print(struct sock
+ 	case AF_TIPC:
+ 		sock_name = tipc_netid_name(s->type);
+ 		break;
++#if defined(AF_VSOCK)
+ 	case AF_VSOCK:
+ 		sock_name = vsock_netid_name(s->type);
+ 		break;
++#endif
+ 	case AF_XDP:
+ 		sock_name = "xdp";
+ 		break;
+@@ -1696,8 +1714,10 @@ static int run_ssfilter(struct ssfilter
+ 			return s->lport == 0 && s->local.data[0] == 0;
+ 		if (s->local.family == AF_NETLINK)
+ 			return s->lport < 0;
++#if defined(AF_VSOCK)
+ 		if (s->local.family == AF_VSOCK)
+ 			return s->lport > 1023;
++#endif
+ 
+ 		return is_ephemeral(s->lport);
+ 	}
+@@ -2073,6 +2093,7 @@ void *parse_devcond(char *name)
+ 	return res;
+ }
+ 
++#if defined(AF_VSOCK)
+ static void vsock_set_inet_prefix(inet_prefix *a, __u32 cid)
+ {
+ 	*a = (inet_prefix){
+@@ -2081,6 +2102,7 @@ static void vsock_set_inet_prefix(inet_p
+ 	};
+ 	memcpy(a->data, &cid, sizeof(cid));
+ }
++#endif
+ 
+ void *parse_hostcond(char *addr, bool is_port)
+ {
+@@ -2156,6 +2178,7 @@ void *parse_hostcond(char *addr, bool is
+ 		goto out;
+ 	}
+ 
++#if defined(AF_VSOCK)
+ 	if (fam == AF_VSOCK || strncmp(addr, "vsock:", 6) == 0) {
+ 		__u32 cid = ~(__u32)0;
+ 
+@@ -2186,6 +2209,7 @@ void *parse_hostcond(char *addr, bool is
+ 		fam = AF_VSOCK;
+ 		goto out;
+ 	}
++#endif
+ 
+ 	if (fam == AF_INET || !strncmp(addr, "inet:", 5)) {
+ 		fam = AF_INET;
+@@ -4565,6 +4589,7 @@ static int netlink_show(struct filter *f
+ 	return 0;
+ }
+ 
++#if defined(AF_VSOCK)
+ static bool vsock_type_skip(struct sockstat *s, struct filter *f)
+ {
+ 	if (s->type == SOCK_STREAM && !(f->dbs & (1 << VSOCK_ST_DB)))
+@@ -4643,6 +4668,7 @@ static int vsock_show(struct filter *f)
+ 
+ 	return handle_netlink_request(f, &req.nlh, sizeof(req), vsock_show_sock);
+ }
++#endif
+ 
+ static void tipc_sock_addr_print(struct rtattr *net_addr, struct rtattr *id)
+ {
+@@ -4770,9 +4796,11 @@ static int generic_show_sock(struct nlms
+ 	case AF_NETLINK:
+ 		ret = netlink_show_sock(nlh, arg);
+ 		break;
++#if defined(AF_VSOCK)
+ 	case AF_VSOCK:
+ 		ret = vsock_show_sock(nlh, arg);
+ 		break;
++#endif
+ 	case AF_XDP:
+ 		ret = xdp_show_sock(nlh, arg);
+ 		break;
+@@ -5123,7 +5151,9 @@ static const struct option long_opts[] =
+ 	{ "raw", 0, 0, 'w' },
+ 	{ "unix", 0, 0, 'x' },
+ 	{ "tipc", 0, 0, OPT_TIPCSOCK},
++#if defined(AF_VSOCK)
+ 	{ "vsock", 0, 0, OPT_VSOCK },
++#endif
+ 	{ "all", 0, 0, 'a' },
+ 	{ "listening", 0, 0, 'l' },
+ 	{ "ipv4", 0, 0, '4' },
+@@ -5212,9 +5242,11 @@ int main(int argc, char *argv[])
+ 		case 'x':
+ 			filter_af_set(&current_filter, AF_UNIX);
+ 			break;
++#if defined(AF_VSOCK)
+ 		case OPT_VSOCK:
+ 			filter_af_set(&current_filter, AF_VSOCK);
+ 			break;
++#endif
+ 		case OPT_TIPCSOCK:
+ 			filter_af_set(&current_filter, AF_TIPC);
+ 			break;
+@@ -5249,8 +5281,10 @@ int main(int argc, char *argv[])
+ 				filter_af_set(&current_filter, AF_NETLINK);
+ 			else if (strcmp(optarg, "tipc") == 0)
+ 				filter_af_set(&current_filter, AF_TIPC);
++#if defined(AF_VSOCK)
+ 			else if (strcmp(optarg, "vsock") == 0)
+ 				filter_af_set(&current_filter, AF_VSOCK);
++#endif
+ 			else if (strcmp(optarg, "xdp") == 0)
+ 				filter_af_set(&current_filter, AF_XDP);
+ 			else if (strcmp(optarg, "help") == 0)
+@@ -5452,8 +5486,10 @@ int main(int argc, char *argv[])
+ 		dccp_show(&current_filter);
+ 	if (current_filter.dbs & (1<<SCTP_DB))
+ 		sctp_show(&current_filter);
++#if defined(AF_VSOCK)
+ 	if (current_filter.dbs & VSOCK_DBM)
+ 		vsock_show(&current_filter);
++#endif
+ 	if (current_filter.dbs & (1<<TIPC_DB))
+ 		tipc_show(&current_filter);
+ 	if (current_filter.dbs & (1<<XDP_DB))
+diff -rupN orig_iproute2-5.7.0/lib/utils.c iproute2-5.7.0/lib/utils.c
+--- orig_iproute2-5.7.0/lib/utils.c	2020-06-03 11:35:00.000000000 +0800
++++ iproute2-5.7.0/lib/utils.c	2020-06-22 14:36:31.642403183 +0800
+@@ -584,6 +584,7 @@ static int __get_addr_1(inet_prefix *add
+ 		return 0;
+ 	}
+ 
++#if 0 // brcm: not support
+ 	if (family == AF_MPLS) {
+ 		unsigned int maxlabels;
+ 		int i;
+@@ -604,6 +605,7 @@ static int __get_addr_1(inet_prefix *add
+ 		}
+ 		return 0;
+ 	}
++#endif
+ 
+ 	addr->family = AF_INET;
+ 	if (family != AF_UNSPEC && family != AF_INET)
+@@ -636,12 +638,14 @@ int af_bit_len(int af)
+ 		return 128;
+ 	case AF_INET:
+ 		return 32;
++#if 0 // brcm: not support
+ 	case AF_DECnet:
+ 		return 16;
+ 	case AF_IPX:
+ 		return 80;
+ 	case AF_MPLS:
+ 		return 20;
++#endif
+ 	}
+ 
+ 	return 0;
+@@ -729,6 +733,7 @@ int get_addr_rta(inet_prefix *dst, const
+ 		dst->bytelen = 16;
+ 		memcpy(dst->data, data, 16);
+ 		break;
++#if 0 // brcm: not support
+ 	case 2:
+ 		dst->family = AF_DECnet;
+ 		dst->bytelen = 2;
+@@ -739,6 +744,7 @@ int get_addr_rta(inet_prefix *dst, const
+ 		dst->bytelen = 10;
+ 		memcpy(dst->data, data, 10);
+ 		break;
++#endif
+ 	default:
+ 		return -1;
+ 	}
+@@ -984,10 +990,12 @@ const char *rt_addr_n2a_r(int af, int le
+ 	case AF_INET:
+ 	case AF_INET6:
+ 		return inet_ntop(af, addr, buf, buflen);
++#if 0 // brcm: not support
+ 	case AF_MPLS:
+ 		return mpls_ntop(af, addr, buf, buflen);
+ 	case AF_PACKET:
+ 		return ll_addr_n2a(addr, len, ARPHRD_VOID, buf, buflen);
++#endif
+ 	case AF_BRIDGE:
+ 	{
+ 		const union {
+@@ -1027,12 +1035,14 @@ int read_family(const char *name)
+ 		family = AF_INET;
+ 	else if (strcmp(name, "inet6") == 0)
+ 		family = AF_INET6;
++#if 0 // brcm: not support
+ 	else if (strcmp(name, "link") == 0)
+ 		family = AF_PACKET;
+ 	else if (strcmp(name, "ipx") == 0)
+ 		family = AF_IPX;
+ 	else if (strcmp(name, "mpls") == 0)
+ 		family = AF_MPLS;
++#endif
+ 	else if (strcmp(name, "bridge") == 0)
+ 		family = AF_BRIDGE;
+ 	return family;
+@@ -1044,12 +1054,14 @@ const char *family_name(int family)
+ 		return "inet";
+ 	if (family == AF_INET6)
+ 		return "inet6";
++#if 0 // brcm: not support
+ 	if (family == AF_PACKET)
+ 		return "link";
+ 	if (family == AF_IPX)
+ 		return "ipx";
+ 	if (family == AF_MPLS)
+ 		return "mpls";
++#endif
+ 	if (family == AF_BRIDGE)
+ 		return "bridge";
+ 	return "???";

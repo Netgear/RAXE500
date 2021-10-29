@@ -1,0 +1,18 @@
++++ https_dns_proxy/src/options.c
+@@ -112,6 +112,7 @@
+       return -1;
+   }
+   opt->dscp <<= 2;
++#if 0 // brcm: avoid this error message.
+   // Get noisy about bad security practices.
+   if (getuid() == 0 && (!opt->user || !opt->group)) {
+     printf("----------------------------\n"
+@@ -120,6 +121,7 @@
+            "----------------------------\n");
+     sleep(1);
+   }
++#endif
+   if (opt->logfile == NULL ||
+       !strcmp(opt->logfile, "-")) {
+     opt->logfd = STDOUT_FILENO;
+

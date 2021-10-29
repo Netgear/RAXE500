@@ -1,0 +1,23 @@
+{
+  "isPrivileged": 0,
+  "runLevel": -1,
+  "enableAfterInstall": false,
+  "bus":
+  { 
+    "wellknown-name": "com.broadcom.openwrt"
+  },
+  "linux":
+  {
+    "resources":
+    {
+      "cpu": {
+          "quota": 80,
+          "cpus": "0-1",
+      },
+      "memory": {
+          "limit":128000000,
+      },
+      "network-setup": {"mode":"Primary"},
+    },
+  },
+}

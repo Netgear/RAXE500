@@ -1,0 +1,47 @@
+security_policy {
+	delegate_id = <%DELG_ID%>;
+	min_tpl_compatibility = <0x2>;
+	key-aes {
+		description = "Encrypted AES key - Mandatory Node";
+		data = <%DELG_AES_KEY_DATA%>;
+		algo = "aes-cbc-128";
+	};
+	sec_restriction {
+		description = "Security Restrictions xxx - Optional Node";
+		sw_restriction {
+			status = "disabled";
+			required_images {
+				image1 {
+					img_name = "armtf";
+					load = <0x0>;
+					start = <0x0>;
+					sha256 = <0x0>;
+				};
+				image2 {
+					imag_name = "optee";
+					load = <0x0>;
+					sha256 = <0x0>;
+				};
+			};
+		};
+		sec_exports {
+			status = "enabled";
+			allowed_exports = "SEC_ITEM_KEY_DEV_SPECIFIC,SEC_ITEM_SER_NUM";
+		};
+		hw_state {
+ 			// all    - Blocks access for all masters 
+			// none   - Unlocks access for all masters
+			// nonsec - Blocks access for nonsecure masters only
+			// prov   - unlock access for nonsecure provisioning by 
+			//          locking populated data only (sotp)
+			sotp-lock = "prov";
+			rng-lock = "none";
+		};
+	};
+	anti-rollback {
+		status = "disabled";
+		description = "Anti-rollback update - Optional Node";
+		new_antirollback = <10>;
+		antirollback_limit = <2>;
+	};
+};

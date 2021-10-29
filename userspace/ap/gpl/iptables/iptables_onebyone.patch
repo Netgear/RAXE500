@@ -1,0 +1,49 @@
+diff -Naur iptables-1.6.2/extensions/libipt_DNAT.c iptables-1.6.2_new/extensions/libipt_DNAT.c
+--- iptables-1.6.2/extensions/libipt_DNAT.c	2018-02-02 23:37:25.000000000 +0800
++++ iptables-1.6.2_new/extensions/libipt_DNAT.c	2020-11-26 17:23:59.000000000 +0800
+@@ -12,6 +12,9 @@
+ 	O_TO_DEST = 0,
+ 	O_RANDOM,
+ 	O_PERSISTENT,
++#if 1 //2015/07/09 Mos, Add one by one option to iptables for portforwading in different port range
++	O_ONEBYONE,
++#endif
+ 	O_X_TO_DEST, /* hidden flag */
+ 	F_TO_DEST   = 1 << O_TO_DEST,
+ 	F_RANDOM    = 1 << O_RANDOM,
+@@ -40,6 +43,9 @@
+ 	 .flags = XTOPT_MAND | XTOPT_MULTI},
+ 	{.name = "random", .id = O_RANDOM, .type = XTTYPE_NONE},
+ 	{.name = "persistent", .id = O_PERSISTENT, .type = XTTYPE_NONE},
++#if 1 //2015/07/09 Mos, Add one by one option to iptables for portforwading in different port range
++	{.name = "onebyone", .id = O_ONEBYONE, .type = XTTYPE_NONE},
++#endif
+ 	XTOPT_TABLEEND,
+ };
+ 
+@@ -179,6 +185,12 @@
+ 	case O_PERSISTENT:
+ 		info->mr.range[0].flags |= NF_NAT_RANGE_PERSISTENT;
+ 		break;
++#if 1 //2015/07/09 Mos, Add one by one option to iptables for portforwading in different port range
++	case O_ONEBYONE:
++		if (cb->xflags & F_TO_DEST)
++			info->mr.range[0].flags |= NF_NAT_RANGE_PROTO_ONEBYONE;
++		break;
++#endif
+ 	}
+ }
+ 
+diff -Naur iptables-1.6.2/include/linux/netfilter/nf_nat.h iptables-1.6.2_new/include/linux/netfilter/nf_nat.h
+--- iptables-1.6.2/include/linux/netfilter/nf_nat.h	2018-02-02 23:37:25.000000000 +0800
++++ iptables-1.6.2_new/include/linux/netfilter/nf_nat.h	2020-11-26 17:24:10.000000000 +0800
+@@ -9,6 +9,9 @@
+ #define NF_NAT_RANGE_PROTO_RANDOM		(1 << 2)
+ #define NF_NAT_RANGE_PERSISTENT			(1 << 3)
+ #define NF_NAT_RANGE_PROTO_RANDOM_FULLY		(1 << 4)
++#if 1 //2015/07/09 Mos, Add one by one option to iptables for portforwading in different port range
++#define NF_NAT_RANGE_PROTO_ONEBYONE (1<<5)
++#endif
+ 
+ #define NF_NAT_RANGE_PROTO_RANDOM_ALL		\
+ 	(NF_NAT_RANGE_PROTO_RANDOM | NF_NAT_RANGE_PROTO_RANDOM_FULLY)

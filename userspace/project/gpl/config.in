@@ -1,0 +1,104 @@
+#
+# Copyright 2019  Hon Hai Precision Ind. Co. Ltd.
+#  All Rights Reserved.
+# No portions of this material shall be reproduced in any form without the
+# written permission of Hon Hai Precision Ind. Co. Ltd.
+#
+# All information contained in this document is Hon Hai Precision Ind.
+# Co. Ltd. company private, proprietary, and trade secret property and
+# are protected by international intellectual property laws and treaties.
+#
+
+export LINUXDIR=$(KERNEL_PATH)
+export KERNELRELEASE := $(shell cat $(KERNEL_PATH)/include/config/kernel.release 2> /dev/null)
+
+
+# Build platform
+BUILD := i386-pc-linux-gnu
+export CONFIGURE := ./configure --build=$(BUILD) --target=$(TARGET_PLATFORM_ARCH)-linux --host=$(TARGET_PLATFORM_ARCH)-linux
+
+export BASEDIR=$(BUILD_DIR)
+export BUILDDIR=$(BUILD_DIR)
+export PLATFORMDIR := $(BUILD_DIR)/targets/$(PROFILE)
+export INSTALLDIR := $(PLATFORMDIR)/fs.install
+export TARGETDIR := $(PLATFORMDIR)/fs.install
+export TOPDIR := $(LINUXDIR)
+export KERNELPATH := $(LINUXDIR)
+export MODPATH := ${TARGETDIR}/lib/modules/${KERNELRELEASE}/kernel
+export MODLIB := $(TARGETDIR)/lib/modules/$(KERNELRELEASE)
+
+#
+# Cross-compile environment variables
+#
+export AS		= $(TOOLCHAIN_PATH_USER)/$(TARGET_PLATFORM_CROSS_COMPILE_USER)as
+export LD		= $(TOOLCHAIN_PATH_USER)/$(TARGET_PLATFORM_CROSS_COMPILE_USER)ld
+export CC		= $(TOOLCHAIN_PATH_USER)/$(TARGET_PLATFORM_CROSS_COMPILE_USER)gcc
+export CPP		= $(CC) -E
+export AR		= $(TOOLCHAIN_PATH_USER)/$(TARGET_PLATFORM_CROSS_COMPILE_USER)ar
+export NM		= $(TOOLCHAIN_PATH_USER)/$(TARGET_PLATFORM_CROSS_COMPILE_USER)nm
+export STRIP		= $(TOOLCHAIN_PATH_USER)/$(TARGET_PLATFORM_CROSS_COMPILE_USER)strip
+export OBJCOPY		= $(TOOLCHAIN_PATH_USER)/$(TARGET_PLATFORM_CROSS_COMPILE_USER)objcopy
+export OBJDUMP		= $(TOOLCHAIN_PATH_USER)/$(TARGET_PLATFORM_CROSS_COMPILE_USER)objdump
+export GENKSYMS	= /sbin/genksyms
+export DEPMOD		= /sbin/depmod
+export MODFLAGS	= -DMODULE
+export PERL		= perl
+export RANLIB := $(TOOLCHAIN_PATH_USER)/$(TARGET_PLATFORM_CROSS_COMPILE_USER)ranlib
+export SIZE := $(TOOLCHAIN_PATH_USER)/$(TARGET_PLATFORM_CROSS_COMPILE_USER)size
+
+
+
+ifeq ($(CONFIG_BCMWPA2),y)
+export CFLAGS += -DBCMWPA2
+endif
+
+export CFLAGS += -DLINUX26 -DCONFIG_KERNEL_2_6_36
+
+ifeq ($(CONFIG_CLOUD_XAGENT_CONF),y)
+CFLAGS += -DXAGENT_CLOUD_SUPPORT
+endif
+
+ifeq ($(CONFIG_BT_IGMP),y)
+CFLAGS += -DBT_IGMP_SUPPORT
+endif
+
+ifeq ($(CONFIG_OPENVPN),y)
+CFLAGS += -DOPENVPN_SUPPORT
+endif
+
+ifeq ($(BCA_HNDROUTER),y)
+CFLAGS += -DBCA_HNDROUTER
+LDFLAGS += -L$(TARGETDIR)/lib -lethctl
+CFLAGS += -DCONFIG_BCM9$(BRCM_CHIP)
+endif
+
+ifeq ($(CONFIG_ORANGE_ISP),y)
+CFLAGS +=-DCONFIG_ORANGE_ISP
+endif
+
+ifeq ($(CONFIG_CIRCLE_PARENTAL_CONTROL),y)
+CFLAGS += -DCIRCLE_PARENTAL_CONTROL
+endif
+
+ifeq ($(CONFIG_CIRCLEV2_PARENTAL_CONTROL),y)
+CFLAGS += -DCIRCLEV2_PARENTAL_CONTROL
+endif
+
+ifeq ($(CONFIG_ONE_SSID),y)
+CFLAGS += -DONE_SSID
+endif
+
+ifeq ($(WLAN_REPEATER),1)
+CFLAGS += -DWLAN_REPEATER
+endif
+
+ifeq ($(CONFIG_DAL),y)
+CFLAGS += -DCONFIG_DAL
+ifeq ($(CONFIG_DAL_FOR_DIL),y)
+CFLAGS += -DCONFIG_DAL_FOR_DIL
+endif
+endif
+
+ifeq ($(CONFIG_NETDUMA_3RD_PARTY_SOURCE),y)
+CFLAGS += -DNETDUMA_EXTENSIONS
+endif

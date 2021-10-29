@@ -1,0 +1,59 @@
+Checking uname sysname type: "Linux"
+Checking uname machine type: "arm"
+Checking uname release type: "7.14.163brcm"
+Checking uname version type: "SMP"
+Checking simple C program: OK
+rpath library support: NO
+-Wl,--version-script support: NO
+Checking getconf LFS_CFLAGS: OK
+Checking for large file support without additional flags: OK
+Checking for -D_FILE_OFFSET_BITS=64: OK
+Checking for -D_LARGE_FILES: OK
+Checking getconf large file support flags work: OK
+Checking correct behavior of strtoll: OK
+Checking for working strptime: NO
+Checking for C99 vsnprintf: NO
+Checking for HAVE_SHARED_MMAP: OK
+Checking for HAVE_MREMAP: NO
+Checking for HAVE_INCOHERENT_MMAP: NO
+Checking for HAVE_SECURE_MKSTEMP: OK
+Checking for HAVE_IFACE_IFCONF: NO
+Checking value of NSIG: "65"
+Checking value of _NSIG: "65"
+Checking value of SIGRTMAX: "64"
+Checking value of SIGRTMIN: "34"
+Checking for kernel change notify support: OK
+Checking for Linux kernel oplocks: NO
+Checking for kernel share modes: NO
+Checking if can we convert from CP850 to UCS-2LE: YES
+Checking if can we convert from IBM850 to UCS-2LE: NO
+Checking if can we convert from UTF-8 to UCS-2LE: YES
+Checking if can we convert from UTF8 to UCS-2LE: YES
+vfs_fileid checking for statfs() and struct statfs.f_fsid: YES
+Checking whether we can use Linux thread-specific credentials with 32-bit system calls: OK
+Checking whether setreuid is available: NO
+Checking whether setresuid is available: YES
+Checking whether seteuid is available: YES
+
+Checking whether fcntl locking is available: OK
+Checking for the maximum value of the 'time_t' type: NO
+Checking whether the realpath function allows a NULL argument: NO
+Checking for ftruncate extend: NO
+getcwd takes a NULL argument: NO
+Checking for HAVE_IFACE_GETIFADDRS: YES
+Checking for HAVE_IFACE_IFREQ: YES
+Checking errno of iconv for illegal multibyte sequence: UNKNOWN
+Checking errno of iconv for illegal multibyte sequence: UNKNOWN
+Checking whether fcntl lock supports open file description locks: UNKNOWN
+Checking errno of iconv for illegal multibyte sequence: UNKNOWN
+Checking whether fcntl lock supports open file description locks: UNKNOWN
+Checking errno of iconv for illegal multibyte sequence: NO
+Checking whether fcntl lock supports open file description locks: NO
+Checking errno of iconv for illegal multibyte sequence: UNKNOWN
+Checking whether fcntl lock supports open file description locks: UNKNOWN
+Checking errno of iconv for illegal multibyte sequence: NO
+Checking whether fcntl lock supports open file description locks: NO
+Checking errno of iconv for illegal multibyte sequence: NO
+Checking whether fcntl lock supports open file description locks: NO
+Checking errno of iconv for illegal multibyte sequence: NO
+Checking whether fcntl lock supports open file description locks: NO

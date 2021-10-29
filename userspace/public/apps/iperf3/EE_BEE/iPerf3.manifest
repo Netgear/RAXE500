@@ -1,0 +1,39 @@
+{
+  "app-name": "iPerf3",
+  "vendor": "NLANR/DAST",
+  "version": "1.0",
+  "description": "iPerf 3.1.4 Program",
+  "bus":
+  {
+    "wellknown-name": "com.broadcom.iperf3",
+    "object-path": ["/com/broadcom/iperf3"]
+  },
+  "process":
+  {
+    "args": [
+      "iPerf3"
+    ]
+  },
+  "linux":
+  {
+    "resources":
+    {
+      "cpu": {
+        "quota": 30
+      },
+      "memory": {
+        "limit": 50000000
+      },
+      "network-setup": {"mode":"Primary"},
+      "flash-size": "980KB"
+    },
+  },
+  "config":
+  {
+    "ExposedPorts":"5001/tcp,5001/udp"
+  },
+  "dependency":
+  {
+    "libraries": "crypt,pthread,rt,expat,ffi,dbus-1,z"
+  }
+}

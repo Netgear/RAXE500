@@ -1,0 +1,80 @@
+--- openvswitch-2.12.1/Makefile.in_orig	2020-10-29 09:23:21.998015489 +0800
++++ openvswitch-2.12.1/Makefile.in	2020-10-29 09:23:41.915145324 +0800
+@@ -1986,7 +1986,7 @@
+ top_srcdir = @top_srcdir@
+ AUTOMAKE_OPTIONS = foreign subdir-objects
+ ACLOCAL_AMFLAGS = -I m4
+-SUBDIRS = datapath
++SUBDIRS =
+ AM_CPPFLAGS = $(SSL_CFLAGS) $(am__append_1) -I $(top_srcdir)/include \
+ 	-I $(top_builddir)/include -I $(top_srcdir)/lib -I \
+ 	$(top_builddir)/lib $(SSL_INCLUDES) $(am__append_4)
+--- openvswitch-2.12.1/configure_orig	2020-10-29 15:14:48.153724493 +0800
++++ openvswitch-2.12.1/configure	2020-10-29 14:36:54.322350109 +0800
+@@ -25365,6 +25365,66 @@
+   fi
+ 
+ 
++  { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether prandom_u32[\(] matches in $KSRC/include/linux/prandom.h" >&5
++$as_echo_n "checking whether prandom_u32[\(] matches in $KSRC/include/linux/prandom.h... " >&6; }
++  if test -f $KSRC/include/linux/prandom.h; then
++    grep 'prandom_u32[\(]' $KSRC/include/linux/prandom.h >/dev/null 2>&1
++    status=$?
++    case $status in
++      0)
++        { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
++$as_echo "yes" >&6; }
++
++  echo '#define HAVE_PRANDOM_U32 1' >> datapath/linux/kcompat.h.new
++
++        ;;
++      1)
++        { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
++$as_echo "no" >&6; }
++
++        ;;
++      *)
++        as_fn_error $? "grep exited with status $status" "$LINENO" 5
++        ;;
++    esac
++  else
++    { $as_echo "$as_me:${as_lineno-$LINENO}: result: file not found" >&5
++$as_echo "file not found" >&6; }
++
++  fi
++
++
++  { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether prandom_u32_max matches in $KSRC/include/linux/prandom.h" >&5
++$as_echo_n "checking whether prandom_u32_max matches in $KSRC/include/linux/prandom.h... " >&6; }
++  if test -f $KSRC/include/linux/prandom.h; then
++    grep 'prandom_u32_max' $KSRC/include/linux/prandom.h >/dev/null 2>&1
++    status=$?
++    case $status in
++      0)
++        { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
++$as_echo "yes" >&6; }
++
++  echo '#define HAVE_PRANDOM_U32_MAX 1' >> datapath/linux/kcompat.h.new
++
++        ;;
++      1)
++        { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
++$as_echo "no" >&6; }
++
++        ;;
++      *)
++        as_fn_error $? "grep exited with status $status" "$LINENO" 5
++        ;;
++    esac
++  else
++    { $as_echo "$as_me:${as_lineno-$LINENO}: result: file not found" >&5
++$as_echo "file not found" >&6; }
++
++  fi
++
++
++
++
+ 
+   { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether get_link_net matches in $KSRC/include/net/rtnetlink.h" >&5
+ $as_echo_n "checking whether get_link_net matches in $KSRC/include/net/rtnetlink.h... " >&6; }

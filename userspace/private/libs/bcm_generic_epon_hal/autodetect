@@ -1,0 +1,1 @@
+dependson: public/libs/rdk_hal_headers private/libs/bcm_comp_md public/libs/bcm_util private/libs/bcm_generic_hal

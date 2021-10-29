@@ -1,0 +1,1 @@
+dependson: public/libs/bcm_spdt public/libs/dbus public/libs/glib public/libs/openssl

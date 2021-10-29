@@ -1,0 +1,12 @@
+prefix=
+exec_prefix=
+libdir=${pcfiledir}
+includedir=.
+
+Name: libavcodec
+Description: Libav codec library
+Version: 53.35.0
+Requires: libavutil = 51.22.3
+Conflicts:
+Libs: ${libdir}/libavcodec.a -ldl -lm -pthread 
+Cflags: -I${includedir}

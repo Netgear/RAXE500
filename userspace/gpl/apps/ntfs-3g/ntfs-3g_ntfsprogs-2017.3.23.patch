@@ -1,0 +1,18 @@
+--- ntfs-3g_ntfsprogs-2017.3.23_orig/ntfs-3g_ntfsprogs-2017.3.23/src/ntfs-3g.c	2017-03-23 11:42:44.000000000 +0200
++++ ntfs-3g_ntfsprogs-2017.3.23/src/ntfs-3g.c	2018-05-13 11:38:00.303702862 +0300
+@@ -4000,6 +4000,7 @@ static struct fuse *mount_fuse(char *par
+ 	
+ 	if (fuse_opt_add_arg(&args, "") == -1)
+ 		goto err;
++#if 0 // brcm: no default option, all from command line. e.g. hotplug
+ #if !CACHEING
+ 	if (fuse_opt_add_arg(&args, "-ouse_ino,kernel_cache,attr_timeout=0") == -1)
+ 		goto err;
+@@ -4007,6 +4008,7 @@ static struct fuse *mount_fuse(char *par
+ 	if (fuse_opt_add_arg(&args, "-ouse_ino,kernel_cache,attr_timeout=1") == -1)
+ 		goto err;
+ #endif
++#endif
+ 	if (ctx->debug)
+ 		if (fuse_opt_add_arg(&args, "-odebug") == -1)
+ 			goto err;

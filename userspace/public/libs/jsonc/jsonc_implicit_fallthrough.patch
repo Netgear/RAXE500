@@ -1,0 +1,100 @@
+diff -rup fallthrough/jsonc/json_object.c jsonc/jsonc/json_object.c
+--- fallthrough/jsonc/json_object.c	2019-04-24 19:04:45.902291502 +0300
++++ jsonc/jsonc/json_object.c	2019-04-25 10:57:37.518731253 +0300
+@@ -697,7 +697,9 @@ int64_t json_object_get_int64(const stru
+ 	case json_type_string:
+ 		if (json_parse_int64(get_string_component(jso), &cint) == 0)
+ 			return cint;
+-		/* FALLTHRU */
++#if defined(__GNUC__) && __GNUC__ >= 7
++		__attribute__((fallthrough));
++#endif
+ 	default:
+ 		return 0;
+ 	}
+diff -rup fallthrough/jsonc/json_tokener.c jsonc/jsonc/json_tokener.c
+--- fallthrough/jsonc/json_tokener.c	2019-04-24 19:04:45.906291502 +0300
++++ jsonc/jsonc/json_tokener.c	2019-04-25 10:56:31.493729590 +0300
+@@ -346,7 +346,9 @@ struct json_object* json_tokener_parse_e
+             tok->err = json_tokener_error_parse_unexpected;
+             goto out;
+         }
+-	/* FALLTHRU */
++#if defined(__GNUC__) && __GNUC__ >= 7
++	__attribute__((fallthrough));
++#endif
+       case '"':
+ 	state = json_tokener_state_string;
+ 	printbuf_reset(tok->pb);
+diff -rup fallthrough/jsonc/linkhash.c jsonc/jsonc/linkhash.c
+--- fallthrough/jsonc/linkhash.c	2019-04-24 19:04:45.911291503 +0300
++++ jsonc/jsonc/linkhash.c	2019-04-25 12:02:40.764829548 +0300
+@@ -31,6 +31,12 @@
+ #include "random_seed.h"
+ #include "linkhash.h"
+ 
++#if defined(__GNUC__) && __GNUC__ >= 7
++#define IMPLICIT_FALLTHROUGH __attribute__((fallthrough))
++#else
++#define IMPLICIT_FALLTHROUGH ((void)0)
++#endif
++
+ /* hash functions */
+ static unsigned long lh_char_hash(const void *k);
+ static unsigned long lh_perllike_str_hash(const void *k);
+@@ -366,22 +372,27 @@ static uint32_t hashlittle( const void *
+              a+=k[0]+(((uint32_t)k[1])<<16);
+              break;
+     case 11: c+=((uint32_t)k8[10])<<16;     /* fall through */
++             IMPLICIT_FALLTHROUGH;
+     case 10: c+=k[4];
+              b+=k[2]+(((uint32_t)k[3])<<16);
+              a+=k[0]+(((uint32_t)k[1])<<16);
+              break;
+     case 9 : c+=k8[8];                      /* fall through */
++             IMPLICIT_FALLTHROUGH;
+     case 8 : b+=k[2]+(((uint32_t)k[3])<<16);
+              a+=k[0]+(((uint32_t)k[1])<<16);
+              break;
+     case 7 : b+=((uint32_t)k8[6])<<16;      /* fall through */
++             IMPLICIT_FALLTHROUGH;
+     case 6 : b+=k[2];
+              a+=k[0]+(((uint32_t)k[1])<<16);
+              break;
+     case 5 : b+=k8[4];                      /* fall through */
++             IMPLICIT_FALLTHROUGH;
+     case 4 : a+=k[0]+(((uint32_t)k[1])<<16);
+              break;
+     case 3 : a+=((uint32_t)k8[2])<<16;      /* fall through */
++             IMPLICIT_FALLTHROUGH;
+     case 2 : a+=k[0];
+              break;
+     case 1 : a+=k8[0];
+@@ -416,16 +427,27 @@ static uint32_t hashlittle( const void *
+     switch(length)                   /* all the case statements fall through */
+     {
+     case 12: c+=((uint32_t)k[11])<<24; /* FALLTHRU */
++             IMPLICIT_FALLTHROUGH;
+     case 11: c+=((uint32_t)k[10])<<16; /* FALLTHRU */
++             IMPLICIT_FALLTHROUGH;
+     case 10: c+=((uint32_t)k[9])<<8; /* FALLTHRU */
++             IMPLICIT_FALLTHROUGH;
+     case 9 : c+=k[8]; /* FALLTHRU */
++             IMPLICIT_FALLTHROUGH;
+     case 8 : b+=((uint32_t)k[7])<<24; /* FALLTHRU */
++             IMPLICIT_FALLTHROUGH;
+     case 7 : b+=((uint32_t)k[6])<<16; /* FALLTHRU */
++             IMPLICIT_FALLTHROUGH;
+     case 6 : b+=((uint32_t)k[5])<<8; /* FALLTHRU */
++             IMPLICIT_FALLTHROUGH;
+     case 5 : b+=k[4]; /* FALLTHRU */
++             IMPLICIT_FALLTHROUGH;
+     case 4 : a+=((uint32_t)k[3])<<24; /* FALLTHRU */
++             IMPLICIT_FALLTHROUGH;
+     case 3 : a+=((uint32_t)k[2])<<16; /* FALLTHRU */
++             IMPLICIT_FALLTHROUGH;
+     case 2 : a+=((uint32_t)k[1])<<8; /* FALLTHRU */
++             IMPLICIT_FALLTHROUGH;
+     case 1 : a+=k[0];
+              break;
+     case 0 : return c;

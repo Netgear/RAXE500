@@ -1,0 +1,161 @@
+--- orig_libcap/Make.Rules	2020-08-16 02:09:19.000000000 +0800
++++ libcap/Make.Rules	2020-08-17 14:47:02.488744123 +0800
+@@ -36,12 +36,12 @@ endif
+ 
+ # Target directories
+ 
+-MANDIR=$(man_prefix)/man
+-SBINDIR=$(exec_prefix)/sbin
+-INCDIR=$(inc_prefix)/include
+-LIBDIR=$(lib_prefix)/$(lib)
+-PKGCONFIGDIR=$(LIBDIR)/pkgconfig
+-GOPKGDIR=$(prefix)/share/gocode/src
++MANDIR=$(FAKEROOT)$(man_prefix)/man
++SBINDIR=$(FAKEROOT)$(exec_prefix)/sbin
++INCDIR=$(FAKEROOT)$(inc_prefix)/include
++LIBDIR=$(FAKEROOT)$(lib_prefix)/$(lib)
++PKGCONFIGDIR=$(FAKEROOT)$(prefix)/$(lib)/pkgconfig
++GOPKGDIR=$(FAKEROOT)$(prefix)/share/gocode/src
+ 
+ # Go modules have their own semantics. I plan to leave this value at 0
+ # and keep it there. The Go packages should always remain backwardly
+@@ -75,14 +75,15 @@ BUILD_GPERF := $(shell which gperf >/dev
+ 
+ SYSTEM_HEADERS = /usr/include
+ INCS=$(topdir)/libcap/include/sys/capability.h
+-LDFLAGS += -L$(topdir)/libcap
++LDFLAGS += -L$(topdir)/libcap -L$(INSTALL_DIR)/lib
+ CFLAGS += -Dlinux $(WARNINGS) $(DEBUG)
+-PAM_CAP ?= $(shell if [ -f /usr/include/security/pam_modules.h ]; then echo yes ; else echo no ; fi)
++PAM_CAP :=  no
+ INDENT := $(shell if [ -n "$$(which indent 2>/dev/null)" ]; then echo "| indent -kr" ; fi)
+ DYNAMIC := $(shell if [ ! -d "$(topdir)/.git" ]; then echo yes; fi)
+ 
+ GO := go
+-GOLANG := $(shell if [ -n "$(shell $(GO) version 2>/dev/null)" ]; then echo yes ; else echo no ; fi)
++#GOLANG := $(shell if [ -n "$(shell $(GO) version 2>/dev/null)" ]; then echo yes ; else echo no ; fi)
++GOLANG := no
+ ifeq ($(GOLANG),yes)
+ GOROOT := $(shell $(GO) env GOROOT)
+ GOCGO := $(shell if [ "$(shell $(GO) env CGO_ENABLED)" = 1 ]; then echo yes ; else echo no ; fi)
+--- orig_libcap/libcap/cap_names.h	1970-01-01 08:00:00.000000000 +0800
++++ libcap/libcap/cap_names.h	2020-08-17 14:46:56.552674731 +0800
+@@ -0,0 +1,56 @@
++/*
++ * DO NOT EDIT: this file is generated automatically from
++ *
++ *     <uapi/linux/capability.h>
++ */
++
++#define __CAP_BITS       41
++#define __CAP_NAME_SIZE  23
++
++#ifdef LIBCAP_PLEASE_INCLUDE_ARRAY
++#define LIBCAP_CAP_NAMES { \
++      /* 0 */	"cap_chown", \
++      /* 1 */	"cap_dac_override", \
++      /* 2 */	"cap_dac_read_search", \
++      /* 3 */	"cap_fowner", \
++      /* 4 */	"cap_fsetid", \
++      /* 5 */	"cap_kill", \
++      /* 6 */	"cap_setgid", \
++      /* 7 */	"cap_setuid", \
++      /* 8 */	"cap_setpcap", \
++      /* 9 */	"cap_linux_immutable", \
++      /* 10 */	"cap_net_bind_service", \
++      /* 11 */	"cap_net_broadcast", \
++      /* 12 */	"cap_net_admin", \
++      /* 13 */	"cap_net_raw", \
++      /* 14 */	"cap_ipc_lock", \
++      /* 15 */	"cap_ipc_owner", \
++      /* 16 */	"cap_sys_module", \
++      /* 17 */	"cap_sys_rawio", \
++      /* 18 */	"cap_sys_chroot", \
++      /* 19 */	"cap_sys_ptrace", \
++      /* 20 */	"cap_sys_pacct", \
++      /* 21 */	"cap_sys_admin", \
++      /* 22 */	"cap_sys_boot", \
++      /* 23 */	"cap_sys_nice", \
++      /* 24 */	"cap_sys_resource", \
++      /* 25 */	"cap_sys_time", \
++      /* 26 */	"cap_sys_tty_config", \
++      /* 27 */	"cap_mknod", \
++      /* 28 */	"cap_lease", \
++      /* 29 */	"cap_audit_write", \
++      /* 30 */	"cap_audit_control", \
++      /* 31 */	"cap_setfcap", \
++      /* 32 */	"cap_mac_override", \
++      /* 33 */	"cap_mac_admin", \
++      /* 34 */	"cap_syslog", \
++      /* 35 */	"cap_wake_alarm", \
++      /* 36 */	"cap_block_suspend", \
++      /* 37 */	"cap_audit_read", \
++      /* 38 */	"cap_perfmon", \
++      /* 39 */	"cap_bpf", \
++      /* 40 */	"cap_checkpoint_restore", \
++  }
++#endif /* LIBCAP_PLEASE_INCLUDE_ARRAY */
++
++/* END OF FILE */
+--- orig_libcap/libcap/Makefile	2020-08-14 11:34:12.000000000 +0800
++++ libcap/libcap/Makefile	2020-08-17 14:58:35.216850146 +0800
+@@ -49,11 +49,11 @@ libpsx.pc: libpsx.pc.in
+ 		-e 's,@deps@,$(DEPS),' \
+ 		$< >$@
+ 
+-_makenames: _makenames.c cap_names.list.h
+-	$(BUILD_CC) $(BUILD_CFLAGS) $< -o $@
++#_makenames: _makenames.c cap_names.list.h
++	#$(BUILD_CC) $(BUILD_CFLAGS) $< -o $@
+ 
+-cap_names.h: _makenames
+-	./_makenames > cap_names.h
++#cap_names.h: _makenames
++	#./_makenames > cap_names.h
+ 
+ $(GPERF_OUTPUT): cap_names.list.h
+ 	perl -e 'print "struct __cap_token_s { const char *name; int index; };\n%{\nconst struct __cap_token_s *__cap_lookup_name(const char *, size_t);\n%}\n%%\n"; while ($$l = <>) { $$l =~ s/[\{\"]//g; $$l =~ s/\}.*// ; print $$l; }' < $< | gperf --ignore-case --language=ANSI-C --readonly --null-strings --global-table --hash-function-name=__cap_hash_name --lookup-function-name="__cap_lookup_name" -c -t -m20 $(INDENT) > $@
+--- orig_libcap/libcap/cap_names.list.h	1970-01-01 08:00:00.000000000 +0800
++++ libcap/libcap/cap_names.list.h	2020-08-17 15:02:52.327861668 +0800
+@@ -0,0 +1,41 @@
++{"cap_chown",0},
++{"cap_dac_override",1},
++{"cap_dac_read_search",2},
++{"cap_fowner",3},
++{"cap_fsetid",4},
++{"cap_kill",5},
++{"cap_setgid",6},
++{"cap_setuid",7},
++{"cap_setpcap",8},
++{"cap_linux_immutable",9},
++{"cap_net_bind_service",10},
++{"cap_net_broadcast",11},
++{"cap_net_admin",12},
++{"cap_net_raw",13},
++{"cap_ipc_lock",14},
++{"cap_ipc_owner",15},
++{"cap_sys_module",16},
++{"cap_sys_rawio",17},
++{"cap_sys_chroot",18},
++{"cap_sys_ptrace",19},
++{"cap_sys_pacct",20},
++{"cap_sys_admin",21},
++{"cap_sys_boot",22},
++{"cap_sys_nice",23},
++{"cap_sys_resource",24},
++{"cap_sys_time",25},
++{"cap_sys_tty_config",26},
++{"cap_mknod",27},
++{"cap_lease",28},
++{"cap_audit_write",29},
++{"cap_audit_control",30},
++{"cap_setfcap",31},
++{"cap_mac_override",32},
++{"cap_mac_admin",33},
++{"cap_syslog",34},
++{"cap_wake_alarm",35},
++{"cap_block_suspend",36},
++{"cap_audit_read",37},
++{"cap_perfmon",38},
++{"cap_bpf",39},
++{"cap_checkpoint_restore",40},

@@ -1,0 +1,5 @@
+
+condition: ifneq ($(strip $(BUILD_OPENVSWITCH)),)
+
+dependson: private/libs/bcmmcast public/libs/openssl public/libs/expat
+

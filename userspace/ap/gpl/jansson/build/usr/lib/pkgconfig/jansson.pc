@@ -1,0 +1,10 @@
+prefix=/disk6/bob/SVN/R8000+/2017_03_27_BSP_7.14.164.306_gamming_router/userspace/ap/gpl/jansson/build/usr
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: Jansson
+Description: Library for encoding, decoding and manipulating JSON data
+Version: 2.7
+Libs: -L${libdir} -ljansson
+Cflags: -I${includedir}

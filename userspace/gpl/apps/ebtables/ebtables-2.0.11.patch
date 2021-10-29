@@ -1,0 +1,2983 @@
+diff -Naur orig_ebtables-2.0.11/ebtables.c ebtables-2.0.11/ebtables.c
+--- orig_ebtables-2.0.11/ebtables.c	2019-12-02 23:27:31.000000000 +0800
++++ ebtables-2.0.11/ebtables.c	2020-03-18 10:41:59.229639828 +0800
+@@ -29,6 +29,9 @@
+ #include <signal.h>
+ #include "include/ebtables_u.h"
+ #include "include/ethernetdb.h"
++#include <unistd.h>
++#include <fcntl.h>
++
+ 
+ /* Checks whether a command has already been specified */
+ #define OPT_COMMANDS (replace->flags & OPT_COMMAND || replace->flags & OPT_ZERO)
+@@ -114,6 +117,60 @@
+ static struct ebt_u_entry *new_entry;
+ 
+ 
++#define MUTEX_FILE "/tmp/ebtables.lock"
++
++static struct multiprocess_lock_t {
++    int                 fd;
++    struct flock        lock_struct;
++} multiprocess_lock = {};
++
++/* These two are for inter-process locking */
++void get_global_mutex() {
++    int ret;
++
++    if (multiprocess_lock.fd != 0)
++    {
++        fprintf(stderr, "ebtables: tried to get lock twice.  ignoring second attempt...\n");
++        return;  // ok, this is bad, but not aborting -- attempting to make the best of it...
++    }
++
++    multiprocess_lock.fd = open(MUTEX_FILE, O_NONBLOCK | O_CREAT | O_WRONLY, 0600);
++    if (multiprocess_lock.fd == -1) {
++        fprintf(stderr, "could not open file %s\n", MUTEX_FILE);
++        exit(1);
++    }
++
++
++    memset(&multiprocess_lock.lock_struct, 0, sizeof(multiprocess_lock.lock_struct));
++    
++    multiprocess_lock.lock_struct.l_type = F_WRLCK;
++    multiprocess_lock.lock_struct.l_whence = SEEK_SET;
++    multiprocess_lock.lock_struct.l_start = 0;
++    multiprocess_lock.lock_struct.l_len = 0;
++    multiprocess_lock.lock_struct.l_pid = getpid();
++    
++    ret = fcntl(multiprocess_lock.fd, F_SETLKW, &multiprocess_lock.lock_struct);
++    if (ret == -1) {
++       fprintf(stderr, "could not lock file\n");
++       exit(1);
++    }
++    
++    return;
++     
++}
++
++void release_global_mutex() {
++    if(multiprocess_lock.fd != 0) {
++        multiprocess_lock.lock_struct.l_type = F_UNLCK;
++        fcntl(multiprocess_lock.fd, F_SETLK, &multiprocess_lock.lock_struct);
++
++        close(multiprocess_lock.fd);  
++
++        memset(&multiprocess_lock, 0, sizeof(multiprocess_lock));    
++    }
++}
++
++
+ static int global_option_offset;
+ #define OPTION_OFFSET 256
+ static struct option *merge_options(struct option *oldopts,
+diff -Naur orig_ebtables-2.0.11/ebtablesd.c ebtables-2.0.11/ebtablesd.c
+--- orig_ebtables-2.0.11/ebtablesd.c	2019-12-02 23:27:31.000000000 +0800
++++ ebtables-2.0.11/ebtablesd.c	2020-03-18 10:41:59.229639828 +0800
+@@ -47,6 +47,9 @@
+ 	strcpy(replace[2].name, "broute");
+ }
+ 
++extern void get_global_mutex();
++extern void release_global_mutex();
++
+ int main(int argc_, char *argv_[])
+ {
+ 	char *argv[EBTD_ARGC_MAX], *args[4], name[] = "mkdir",
+@@ -54,6 +57,8 @@
+ 	     cmdline[EBTD_CMDLINE_MAXLN];
+ 	int readfd, base = 0, offset = 0, n = 0, quotemode = 0;
+ 
++	get_global_mutex();
++
+ 	/* Make sure the pipe directory exists */
+ 	args[0] = name;
+ 	args[1] = mkdir_option;
+@@ -366,6 +371,7 @@
+ 	}
+ do_exit:
+ 	unlink(EBTD_PIPE);
+-	
++	release_global_mutex();
++    
+ 	return 0;
+ }
+diff -Naur orig_ebtables-2.0.11/ebtables-restore.c ebtables-2.0.11/ebtables-restore.c
+--- orig_ebtables-2.0.11/ebtables-restore.c	2019-12-02 23:27:31.000000000 +0800
++++ ebtables-2.0.11/ebtables-restore.c	2020-03-18 10:41:59.229639828 +0800
+@@ -48,6 +48,9 @@
+ 	strcpy(replace[2].name, "broute");
+ }
+ 
++extern void get_global_mutex();
++extern void release_global_mutex();
++
+ #define ebtrest_print_error(format, args...) do {fprintf(stderr, "ebtables-restore: "\
+                                              "line %d: "format".\n", line, ##args); exit(-1);} while (0)
+ int main(int argc_, char *argv_[])
+@@ -152,5 +155,8 @@
+ 		ebt_deliver_table(&replace[table_nr]);
+ 		ebt_deliver_counters(&replace[table_nr]);
+ 	}
++    
++	release_global_mutex();
++    
+ 	return 0;
+ }
+diff -Naur orig_ebtables-2.0.11/ebtables-standalone.c ebtables-2.0.11/ebtables-standalone.c
+--- orig_ebtables-2.0.11/ebtables-standalone.c	2019-12-02 23:27:31.000000000 +0800
++++ ebtables-2.0.11/ebtables-standalone.c	2020-03-18 10:41:59.229639828 +0800
+@@ -4,11 +4,17 @@
+ static struct ebt_u_replace replace;
+ void ebt_early_init_once();
+ 
++extern void get_global_mutex();
++extern void release_global_mutex();
++
++
+ int main(int argc, char *argv[])
+ {
++	get_global_mutex();
+ 	ebt_silent = 0;
+ 	ebt_early_init_once();
+ 	strcpy(replace.name, "filter");
+ 	do_command(argc, argv, EXEC_STYLE_PRG, &replace);
++	release_global_mutex();
+ 	return 0;
+ }
+diff -Naur orig_ebtables-2.0.11/examples/ulog/test_ulog.c ebtables-2.0.11/examples/ulog/test_ulog.c
+--- orig_ebtables-2.0.11/examples/ulog/test_ulog.c	2019-12-02 23:27:31.000000000 +0800
++++ ebtables-2.0.11/examples/ulog/test_ulog.c	2020-03-18 10:41:59.229639828 +0800
+@@ -130,6 +130,10 @@
+ 	return msg;
+ }
+ 
++
++extern void get_global_mutex();
++extern void release_global_mutex();
++
+ int main(int argc, char **argv)
+ {
+ 	int i, curr_len, pktcnt = 0;
+@@ -142,6 +146,7 @@
+ 	struct icmphdr *icmph;
+ 	struct tm* ptm;
+ 	char time_str[40], *ctmp;
++	get_global_mutex();
+ 
+ 	if (argc == 2) {
+ 		i = strtoul(argv[1], &ctmp, 10);
+@@ -157,12 +162,14 @@
+ 	sfd = socket(PF_NETLINK, SOCK_RAW, NETLINK_NFLOG);
+ 	if (!sfd) {
+ 		perror("socket");
++		release_global_mutex();
+ 		exit(-1);
+ 	}
+ 
+ 	if (bind(sfd, (struct sockaddr *)(&sa_local), sizeof(sa_local)) ==
+ 	    -1) {
+ 		perror("bind");
++		release_global_mutex();
+ 		exit(-1);
+ 	}
+ 	i = setsockopt(sfd, SOL_SOCKET, SO_RCVBUF, &rcvbufsize,
+@@ -287,6 +294,7 @@
+ 		       "######END#OF##PACKET#DUMP######\n"
+ 		       "###############################\n");
+ 	}
++	release_global_mutex();
+ 
+ 	return 0;
+ }
+diff -Naur orig_ebtables-2.0.11/extensions/ebt_blog.c ebtables-2.0.11/extensions/ebt_blog.c
+--- orig_ebtables-2.0.11/extensions/ebt_blog.c	1970-01-01 08:00:00.000000000 +0800
++++ ebtables-2.0.11/extensions/ebt_blog.c	2020-03-18 10:41:59.229639828 +0800
+@@ -0,0 +1,104 @@
++/* Shared library add-on to ebtables to add blog match support */
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <getopt.h>
++#include "../include/ebtables_u.h"
++#include <include/linux/netfilter_bridge/ebt_blog.h>
++
++#define TCP_PUREACK 0x01
++
++static struct option opts[] =
++{
++	{ "tcp-pureack"	       , no_argument, 0, TCP_PUREACK },
++	{ 0 }
++};
++
++static void print_help()
++{
++	printf(
++"blog match options:\n"
++"    --tcp-pureack		 match when blog TCP Pure ACK is\n"
++"				 detected.\n");
++}
++
++static void init(struct ebt_entry_match *match)
++{
++	struct ebt_blog_info *bloginfo =
++	   (struct ebt_blog_info *)match->data;
++
++	bloginfo->tcp_pure_ack = 0;
++	bloginfo->invert = 0;
++}
++
++static int parse(int c, char **argv, int argc, const struct ebt_u_entry *entry,
++   unsigned int *flags, struct ebt_entry_match **match)
++{
++	struct ebt_blog_info *bloginfo = (struct ebt_blog_info *)(*match)->data;
++
++	switch (c) {
++	case TCP_PUREACK:
++		ebt_check_option2(flags, TCP_PUREACK);
++		bloginfo->tcp_pure_ack = 1;
++		if (ebt_check_inverse(optarg))
++		{
++			bloginfo->invert = 1;
++		}
++		break;
++	default:
++		return 0;
++	}
++
++	return 1;
++}
++
++static void final_check(const struct ebt_u_entry *entry,
++   const struct ebt_entry_match *match, const char *name,
++   unsigned int hookmask, unsigned int time)
++{
++}
++
++static void print(const struct ebt_u_entry *entry,
++   const struct ebt_entry_match *match)
++{
++	const struct ebt_blog_info *bloginfo = (struct ebt_blog_info *)match->data;
++
++	printf(" blog match");
++	if (bloginfo->tcp_pure_ack)
++	{
++		printf(" TCP Pure ACK");
++		if (bloginfo->invert)
++			printf(" not");
++		printf(" set");
++	}
++	printf(" ");
++}
++
++static int compare(const struct ebt_entry_match *m1,
++   const struct ebt_entry_match *m2)
++{
++	struct ebt_blog_info *b1 = (struct ebt_blog_info *)m1->data;
++	struct ebt_blog_info *b2 = (struct ebt_blog_info *)m2->data;
++
++	if (b1->invert != b2->invert || b1->tcp_pure_ack != b2->tcp_pure_ack)
++		return 0;
++	return 1;
++}
++
++static struct ebt_u_match blog_match =
++{
++	.name		= "blog",
++	.size		= sizeof(struct ebt_blog_info),
++	.help		= print_help,
++	.init		= init,
++	.parse		= parse,
++	.final_check	= final_check,
++	.print		= print,
++	.compare	= compare,
++	.extra_ops	= opts,
++};
++
++static void _INIT(void)
++{
++	ebt_register_match(&blog_match);
++}
+diff -Naur orig_ebtables-2.0.11/extensions/ebt_ftos.c ebtables-2.0.11/extensions/ebt_ftos.c
+--- orig_ebtables-2.0.11/extensions/ebt_ftos.c	1970-01-01 08:00:00.000000000 +0800
++++ ebtables-2.0.11/extensions/ebt_ftos.c	2020-03-18 10:41:59.229639828 +0800
+@@ -0,0 +1,180 @@
++/* 
++ * Description: EBTables time extension module for userspace.
++ *  Authors:  Song Wang <songw@broadcom.com>, ported from FTOS patch netfilter/iptables
++ *           The following is the original disclaimer.
++ *
++ * Shared library add-on to iptables for FTOS
++ *
++ * (C) 2000 by Matthew G. Marsh <mgm@paktronix.com>
++ *
++ * This program is distributed under the terms of GNU GPL v2, 1991
++ *
++ * libipt_FTOS.c borrowed heavily from libipt_TOS.c  11/09/2000
++ *
++ */
++#include <stdio.h>
++#include <string.h>
++#include <stdlib.h>
++#include <getopt.h>
++
++#include "../include/ebtables_u.h"
++#include <include/linux/netfilter_bridge/ebt_ftos_t.h>
++
++static int ftos_supplied;
++
++#define FTOS_TRGT    '1'
++#define FTOS_SET     '2'
++#define FTOS_WMM     '4'
++#define FTOS_8021Q   '8'
++static struct option opts[] =
++{
++	{ "ftos-target" , required_argument, 0, FTOS_TRGT },
++	{ "set-ftos"    , required_argument, 0, FTOS_SET },
++	{ "wmm-ftos"    , no_argument      , 0, FTOS_WMM },
++	{ "8021q-ftos"  , no_argument      , 0, FTOS_8021Q },
++	{ 0 }
++};
++
++static void print_help()
++{
++	printf(
++	"ftos target options:\n"
++	" --set-ftos value     : Set TOS byte in IP packet header \n"
++	"			 This value can be in decimal (ex: 32)\n"
++	"			 in hex (ex: 0x20)\n"
++	" --ftos-target target : ACCEPT, DROP, RETURN or CONTINUE\n");
++}
++
++static void init(struct ebt_entry_target *target)
++{
++	struct ebt_ftos_t_info *ftosinfo =
++	   (struct ebt_ftos_t_info *)target->data;
++
++	ftosinfo->target = EBT_CONTINUE;
++	ftosinfo->ftos = 0;
++	ftos_supplied = 0;
++}
++
++#define OPT_FTOS_TARGET       0x01
++#define OPT_FTOS_SETFTOS      0x02
++#define OPT_FTOS_WMMFTOS      0x04
++#define OPT_FTOS_8021QFTOS    0x08
++
++static int
++parse(int c, char **argv, int argc,
++   const struct ebt_u_entry *entry, unsigned int *flags,
++   struct ebt_entry_target **target)
++{
++	struct ebt_ftos_t_info *ftosinfo =
++	   (struct ebt_ftos_t_info *)(*target)->data;
++	char *end;
++
++	switch (c) {
++	case FTOS_TRGT:
++		ebt_check_option2(flags, FTOS_TRGT);
++		if (FILL_TARGET(optarg, ftosinfo->target))
++			ebt_print_error("Illegal --ftos-target target");
++		break;
++	case FTOS_SET:
++		ebt_check_option2(flags, FTOS_SET);
++		ftosinfo->ftos = (u_int8_t)strtoul(optarg, &end, 0);
++        ftosinfo->ftos_set = OPT_FTOS_SETFTOS;
++		if (*end != '\0' || end == optarg)
++			ebt_print_error("Bad FTOS value '%s'", optarg);
++		ftos_supplied = 1;
++                break;
++    case FTOS_WMM:
++        ebt_check_option2(flags, OPT_FTOS_SETFTOS);
++        ftosinfo->ftos_set = FTOS_WMM;
++        //printf("LEON DEBUG: wmm-ftos..........\n");
++        ftos_supplied = 1;
++        break;
++    case FTOS_8021Q:
++        ebt_check_option2(flags, OPT_FTOS_8021QFTOS);
++        ftosinfo->ftos_set = FTOS_8021Q;
++        //printf("LEON DEBUG: 8021q-ftos..........\n");
++        ftos_supplied = 1;
++        break;
++	 default:
++		return 0;
++	}
++	return 1;
++}
++
++static void
++final_check(const struct ebt_u_entry *entry,
++   const struct ebt_entry_target *target, const char *name,
++   unsigned int hookmask, unsigned int time)
++{
++	struct ebt_ftos_t_info *ftosinfo = (struct ebt_ftos_t_info *)target->data;
++
++	if (time == 0 && ftos_supplied == 0)
++		ebt_print_error("No ftos value supplied");
++	if (BASE_CHAIN && ftosinfo->target == EBT_RETURN)
++		ebt_print_error("--ftos-target RETURN not allowed on base chain");
++}
++
++
++/* Prints out the targinfo. */
++static void 
++print(const struct ebt_u_entry *entry,
++   const struct ebt_entry_target *target)
++{
++    const struct ebt_ftos_t_info *ftosinfo = (const struct ebt_ftos_t_info*)target->data;
++    if(ftosinfo->ftos_set == FTOS_WMM)
++        printf("WMM mapping to Tos");
++    else if(ftosinfo->ftos_set == FTOS_8021Q)
++        printf("802.1Q mapping to Tos");
++    else
++        printf("TOS set 0x%x", ftosinfo->ftos);
++
++    if (ftosinfo->target == EBT_ACCEPT) {
++	return;
++    }
++    printf(" --ftos-target %s", TARGET_NAME(ftosinfo->target));
++}
++
++static int 
++compare(const struct ebt_entry_target *t1,
++  	 const struct ebt_entry_target *t2)
++{
++	struct ebt_ftos_t_info *ftosinfo1 =
++	   (struct ebt_ftos_t_info *)t1->data;
++	struct ebt_ftos_t_info *ftosinfo2 =
++	   (struct ebt_ftos_t_info *)t2->data;
++
++	return ftosinfo1->target == ftosinfo2->target &&
++	   ftosinfo1->ftos == ftosinfo2->ftos &&
++	   ftosinfo1->ftos_set == ftosinfo2->ftos_set;
++}
++
++#if 0
++/* Saves the union ipt_targinfo in parsable form to stdout. */
++static void
++save(const struct ipt_ip *ip, const struct ipt_entry_target *target)
++{
++	const struct ipt_FTOS_info *finfo =
++		(const struct ipt_FTOS_info *)target->data;
++
++	printf("--set-ftos 0x%02x ", finfo->ftos);
++}
++#endif
++
++static
++struct  ebt_u_target ftos_target = 
++{
++    EBT_FTOS_TARGET,
++    sizeof(struct ebt_ftos_t_info),
++    print_help,
++    init,
++    parse,
++    final_check,
++    print,
++    compare,
++    opts
++};
++
++static void _INIT(void)
++{
++	ebt_register_target(&ftos_target);
++}
+diff -Naur orig_ebtables-2.0.11/extensions/ebt_ip6_extend.c ebtables-2.0.11/extensions/ebt_ip6_extend.c
+--- orig_ebtables-2.0.11/extensions/ebt_ip6_extend.c	1970-01-01 08:00:00.000000000 +0800
++++ ebtables-2.0.11/extensions/ebt_ip6_extend.c	2020-03-18 10:41:59.229639828 +0800
+@@ -0,0 +1,264 @@
++/* ebt_ip6
++ * 
++ * Authors:
++ * Kuo-Lang Tseng <kuo-lang.tseng@intel.com>
++ * Manohar Castelino <manohar.castelino@intel.com>
++ *
++ * Summary:
++ * This is just a modification of the IPv4 code written by 
++ * Bart De Schuymer <bdschuym@pandora.be>
++ * with the changes required to support IPv6
++ *
++ *  Extend by Broadcom at Jan 31, 2019
++ */
++
++#include <errno.h>
++#include <inttypes.h>
++#include <limits.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <getopt.h>
++#include <netdb.h>
++#include "../include/ebtables_u.h"
++#include <include/linux/netfilter_bridge/ebt_ip6_extend.h>
++
++
++
++#define IP_TCLASS_EXTEND '1'
++#define IP_FLOWLABEL_EXTEND '2'
++
++static const struct option opts[] =
++{
++	{ "ip6-traffic-class-extend"    , required_argument, 0, IP_TCLASS_EXTEND },
++	{ "ip6-tclass-extend"           , required_argument, 0, IP_TCLASS_EXTEND},
++	{ "ip6-flow-label-extend"       , required_argument, 0,  IP_FLOWLABEL_EXTEND},
++	{ 0 }
++};
++
++static uint8_t parse_tclass(const char *tclassstr)
++{
++	char *end;
++	int tclass;
++
++	tclass = strtol(tclassstr, &end, 16);
++	if ((*end == '\0') || (*end == ':') || (*end == '/')) {
++		if (tclass >= 0 && tclass <= 0xFF) {
++            return tclass;
++		}
++	}
++
++	ebt_print_error("Problem with specified tclass '%s'", tclassstr);
++	return 0;
++}
++
++static int parse_tclass_mask(char *mask, unsigned char *mask2)
++{
++	char *end;
++
++	*mask2 = (unsigned char)strtol(mask, &end, 16);
++
++	if (*end != '\0')
++		ebt_print_error("Problem with specified tlcass mask 0x%x", mask2);
++
++	return 0;
++}
++
++static void
++parse_tclass_range_mask(const char *tclassstring, uint8_t *tclass, uint8_t *mask)
++{
++	char *buffer;
++	char *cp;
++	char *p;
++
++	buffer = strdup(tclassstring);
++	p = strrchr(buffer, '/');
++	cp = strchr(buffer, ':');
++
++	if (cp == NULL) {
++		tclass[0] = tclass[1] = parse_tclass(buffer);
++	} else {
++		*cp = '\0';
++		cp++;
++		tclass[0] = buffer[0] ? parse_tclass(buffer) : 0;
++        if (ebt_errormsg[0] != '\0')
++			return;
++		tclass[1] = cp[0] ? parse_tclass(cp) : 0xFF;
++		if (ebt_errormsg[0] != '\0')
++			return;
++		
++		if (tclass[0] > tclass[1])
++			ebt_print_error("Invalid tclass range (min > max)");
++	}
++
++	if (p != NULL) {
++		parse_tclass_mask(p + 1, (unsigned char *)mask);
++	} else {
++		*mask = 0xFF;
++	} 
++   
++	free(buffer);
++}
++
++static void
++parse_flow_label(uint32_t input, uint8_t * flow_lbl)
++{
++	char szFlowLabel[10] = {0};
++	char szTemp[3] = {0};
++	int i;
++	char *end;
++
++	sprintf(szFlowLabel, "%06X", input);
++
++	for (i = 0; i < 3; i++)
++	{
++		szTemp[0] = szFlowLabel[2*i];
++		szTemp[1] = szFlowLabel[2*i+1];
++		*(flow_lbl + i) = strtoul(szTemp, &end, 16);
++	}
++}
++
++static void print_tclass_range_mask(uint8_t *tclass, uint8_t mask)
++{
++	char str[128];
++	int i;
++	char * p = str;
++
++	memset(str, 0, sizeof(str));
++	if (tclass[0] == tclass[1])
++		i = snprintf(str, sizeof(str), "0x%02X", tclass[0]);
++	else
++		i = snprintf(str, sizeof(str),"0x%02X:0x%02X", tclass[0], tclass[1]);
++
++	if (mask != 0xFF)
++		snprintf(p + i, sizeof(str) - i, "/0x%02X ", mask);
++	else
++		snprintf(p + i, sizeof(str) - i, " ");
++
++	printf("%s", str);
++}
++
++static void print_help()
++{
++	printf(
++"ip6 options:\n"
++"--ip6-tclass-extend [!] tclass[:tclass][/mask]        : ipv6 traffic class specification\n"
++"--ip6-flow-label-extend [!] flowlabel : ipv6 flow label specification\n");
++}
++
++static void init(struct ebt_entry_match *match)
++{
++	struct ebt_ip6_extend_info *ipinfo = (struct ebt_ip6_extend_info *)match->data;
++
++	ipinfo->invflags = 0;
++	ipinfo->bitmask = 0;
++}
++
++#define OPT_TCLASS_EXTEND 0x01
++#define OPT_FLOWLABEL_EXTEND 0x02
++static int parse(int c, char **argv, int argc, const struct ebt_u_entry *entry,
++   unsigned int *flags, struct ebt_entry_match **match)
++{
++	struct ebt_ip6_extend_info *ipinfo = (struct ebt_ip6_extend_info *)(*match)->data;
++	char *end;
++	long int i;
++
++	switch (c) {
++	case IP_TCLASS_EXTEND:
++		ebt_check_option2(flags, OPT_TCLASS_EXTEND);
++		if (ebt_check_inverse2(optarg))
++			ipinfo->invflags |= EBT_IP6_TCLASS_EXTEND;
++        parse_tclass_range_mask(optarg, ipinfo->tclass, &ipinfo->tclassmsk);
++		ipinfo->bitmask |= EBT_IP6_TCLASS_EXTEND;
++		break;
++
++	case IP_FLOWLABEL_EXTEND:
++		ebt_check_option2(flags, OPT_FLOWLABEL_EXTEND);
++		if (ebt_check_inverse2(optarg))
++			ipinfo->invflags |= EBT_IP6_FLOWLABEL_EXTEND;
++		i = strtoul(optarg, &end, 16);
++		if (*end != '\0') {
++			ebt_print_error2("Problem with specified IPv6 flow label");
++		} else {
++			parse_flow_label((i & 0xFFFFF), ipinfo->flow_lbl);
++		}
++		ipinfo->bitmask |= EBT_IP6_FLOWLABEL_EXTEND;
++		break;
++		
++	default:
++		return 0;
++	}
++	return 1;
++}
++
++static void final_check(const struct ebt_u_entry *entry,
++   const struct ebt_entry_match *match, const char *name,
++   unsigned int hookmask, unsigned int time)
++{
++	if (entry->ethproto != ETH_P_IPV6) {
++		ebt_print_error("For IPv6 filtering the protocol must be "
++		            "specified as IPv6");
++	} 
++}
++
++static void print(const struct ebt_u_entry *entry,
++   const struct ebt_entry_match *match)
++{
++	struct ebt_ip6_extend_info *ipinfo = (struct ebt_ip6_extend_info *)match->data;
++
++	if (ipinfo->bitmask & EBT_IP6_TCLASS_EXTEND) {
++		printf("--ip6-tclass-extend ");
++		if (ipinfo->invflags & EBT_IP6_TCLASS_EXTEND)
++			printf("! ");
++        print_tclass_range_mask(ipinfo->tclass, ipinfo->tclassmsk);
++	}
++	if (ipinfo->bitmask & EBT_IP6_FLOWLABEL_EXTEND) {
++		printf("--ip6-flow-label-extend ");
++		if (ipinfo->invflags & EBT_IP6_FLOWLABEL_EXTEND)
++			printf("! ");
++		printf("0x%02X%02X%02X ", ipinfo->flow_lbl[0], ipinfo->flow_lbl[1], ipinfo->flow_lbl[2]);
++	}
++}
++
++static int compare(const struct ebt_entry_match *m1,
++   const struct ebt_entry_match *m2)
++{
++	struct ebt_ip6_extend_info *ipinfo1 = (struct ebt_ip6_extend_info *)m1->data;
++	struct ebt_ip6_extend_info *ipinfo2 = (struct ebt_ip6_extend_info *)m2->data;
++
++	if (ipinfo1->bitmask != ipinfo2->bitmask)
++		return 0;
++	if (ipinfo1->invflags != ipinfo2->invflags)
++		return 0;
++	if (ipinfo1->bitmask & EBT_IP6_TCLASS_EXTEND) {
++		if (ipinfo1->tclass[0] != ipinfo2->tclass[0] ||
++            ipinfo1->tclass[1] != ipinfo2->tclass[1] ||
++            ipinfo1->tclassmsk != ipinfo2->tclassmsk)
++			return 0;
++	}
++	if (ipinfo1->bitmask & EBT_IP6_FLOWLABEL_EXTEND) {
++		if (ipinfo1->flow_lbl[0] != ipinfo2->flow_lbl[0] ||
++			ipinfo1->flow_lbl[1] != ipinfo2->flow_lbl[1] ||
++			ipinfo1->flow_lbl[2] != ipinfo2->flow_lbl[2])
++			return 0;
++	}
++	return 1;
++}
++
++static struct ebt_u_match ip6_extend_match =
++{
++	.name		= EBT_IP6_MATCH_EXTEND,
++	.size		= sizeof(struct ebt_ip6_extend_info),
++	.help		= print_help,
++	.init		= init,
++	.parse		= parse,
++	.final_check	= final_check,
++	.print		= print,
++	.compare	= compare,
++	.extra_ops	= opts,
++};
++
++static void _INIT(void)
++{
++	ebt_register_match(&ip6_extend_match);
++}
+diff -Naur orig_ebtables-2.0.11/extensions/ebt_ip_extend.c ebtables-2.0.11/extensions/ebt_ip_extend.c
+--- orig_ebtables-2.0.11/extensions/ebt_ip_extend.c	1970-01-01 08:00:00.000000000 +0800
++++ ebtables-2.0.11/extensions/ebt_ip_extend.c	2020-03-18 10:41:59.229639828 +0800
+@@ -0,0 +1,237 @@
++/* ebt_ip
++ * 
++ * Authors:
++ * Bart De Schuymer <bdschuym@pandora.be>
++ *
++ * Changes:
++ *    added ip-sport and ip-dport; parsing of port arguments is
++ *    based on code from iptables-1.2.7a
++ *    Innominate Security Technologies AG <mhopf@innominate.com>
++ *    September, 2002
++ *
++ *  Extend by Broadcom at Jan 31, 2019
++ */
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <getopt.h>
++#include <netdb.h>
++#include "../include/ebtables_u.h"
++#include <include/linux/netfilter_bridge/ebt_ip_extend.h>
++
++
++#define IP_TOS_EXTEND	'1' /* include/bits/in.h seems to already define IP_TOS */
++#define IP_DSCP_EXTEND	'2' 
++
++static struct option opts[] =
++{
++	{ "ip-tos-extend"              , required_argument, 0, IP_TOS_EXTEND  },
++	{ "ip-dscp-extend"             , required_argument, 0, IP_DSCP_EXTEND },
++	{ 0 }
++};
++
++static uint8_t parse_tos(const char *tosstr)
++{
++	char *end;
++	int tos;
++
++	tos = strtol(tosstr, &end, 16);
++	if ((*end == '\0') || (*end == ':') || (*end == '/')) {
++		if (tos >= 0 && tos <= 0xFF) {
++			return tos;
++		}
++	}
++
++	ebt_print_error("Problem with specified tos '%s'", tosstr);
++	return 0;
++}
++
++static int parse_tos_mask(char *mask, unsigned char *mask2)
++{
++	char *end;
++
++	*mask2 = (unsigned char)strtol(mask, &end, 16);
++
++	if (*end != '\0')
++		ebt_print_error("Problem with specified tos mask 0x%x", mask2);
++
++	return 0;
++}
++
++static void
++parse_tos_range_mask(const char *tosstring, uint8_t *tos, uint8_t *mask)
++{
++	char *buffer;
++	char *cp;
++	char *p;
++
++	buffer = strdup(tosstring);
++	p = strrchr(buffer, '/');
++	cp = strchr(buffer, ':');
++
++	if (cp == NULL) {
++		tos[0] = tos[1] = parse_tos(buffer);
++	} else {
++		*cp = '\0';
++		cp++;
++		tos[0] = buffer[0] ? parse_tos(buffer) : 0;
++        if (ebt_errormsg[0] != '\0')
++			return;
++		tos[1] = cp[0] ? parse_tos(cp) : 0xFF;
++		if (ebt_errormsg[0] != '\0')
++			return;
++		
++		if (tos[0] > tos[1])
++			ebt_print_error("Invalid tosrange (min > max)");
++	}
++
++	if (p != NULL) {
++		parse_tos_mask(p + 1, (unsigned char *)mask);
++	} else {
++		*mask = 0xFF;
++	} 
++
++	free(buffer);
++}
++
++static void print_tos_range_mask(uint8_t *tos, uint8_t mask)
++{
++	char str[128];
++	int i;
++	char * p = str;
++
++	memset(str, 0, sizeof(str));
++	if (tos[0] == tos[1])
++		i = snprintf(str, sizeof(str), "0x%02X", tos[0]);
++	else
++		i = snprintf(str, sizeof(str),"0x%02X:0x%02X", tos[0], tos[1]);
++
++	if (mask != 0xFF)
++		snprintf(p + i, sizeof(str) - i, "/0x%02X ", mask);
++	else
++		snprintf(p + i, sizeof(str) - i, " ");
++
++	printf("%s", str);
++}
++
++static void print_help()
++{
++	printf(
++"ip options:\n"
++"--ip-tos-extend    [!] tos[:tos][/mask]   : ip tos specification\n"
++"--ip-dscp-extend   [!] dscp          	   : ip dscp specification\n");
++}
++
++static void init(struct ebt_entry_match *match)
++{
++	struct ebt_ip_extend_info *ipinfo = (struct ebt_ip_extend_info *)match->data;
++
++	ipinfo->invflags = 0;
++	ipinfo->bitmask = 0;
++}
++
++#define OPT_TOS_EXTEND	0x01
++#define OPT_DSCP_EXTEND	0x02
++
++static int parse(int c, char **argv, int argc, const struct ebt_u_entry *entry,
++   unsigned int *flags, struct ebt_entry_match **match)
++{
++	struct ebt_ip_extend_info *ipinfo = (struct ebt_ip_extend_info *)(*match)->data;
++	char *end;
++	long int i;
++
++	switch (c) {
++	case IP_TOS_EXTEND:
++		ebt_check_option2(flags, OPT_TOS_EXTEND);
++		if (ebt_check_inverse2(optarg))
++			ipinfo->invflags |= EBT_IP_TOS_EXTEND;
++        parse_tos_range_mask(optarg, ipinfo->tos, &ipinfo->tosmask);
++		ipinfo->bitmask |= EBT_IP_TOS_EXTEND;
++		break;
++	case IP_DSCP_EXTEND:
++		ebt_check_option2(flags, OPT_DSCP_EXTEND);
++		if (ebt_check_inverse2(optarg))
++			ipinfo->invflags |= EBT_IP_DSCP_EXTEND;
++		i = strtol(optarg, &end, 16);
++		if (i < 0 || i > 255 || (i & 0x3) || *end != '\0')
++			ebt_print_error("Problem with specified IP dscp");
++		ipinfo->dscp = i;
++		ipinfo->bitmask |= EBT_IP_DSCP_EXTEND;
++		break;
++
++	default:
++		return 0;
++	}
++	return 1;
++}
++
++static void final_check(const struct ebt_u_entry *entry,
++   const struct ebt_entry_match *match, const char *name,
++   unsigned int hookmask, unsigned int time)
++{
++	if (entry->ethproto != ETH_P_IP) {
++		ebt_print_error("For IP filtering the protocol must be "
++					"specified as IPv4");
++	}
++}
++
++static void print(const struct ebt_u_entry *entry,
++   const struct ebt_entry_match *match)
++{
++	struct ebt_ip_extend_info *ipinfo = (struct ebt_ip_extend_info *)match->data;
++
++	if (ipinfo->bitmask & EBT_IP_TOS_EXTEND) {
++		printf("--ip-tos-extend ");
++		if (ipinfo->invflags & EBT_IP_TOS_EXTEND)
++			printf("! ");
++		print_tos_range_mask(ipinfo->tos, ipinfo->tosmask);
++	}
++	if (ipinfo->bitmask & EBT_IP_DSCP_EXTEND) {
++		printf("--ip-dscp-extend ");
++		if (ipinfo->invflags & EBT_IP_DSCP_EXTEND)
++			printf("! ");
++		printf("0x%02X ", ipinfo->dscp);
++	}
++}
++
++static int compare(const struct ebt_entry_match *m1,
++   const struct ebt_entry_match *m2)
++{
++	struct ebt_ip_extend_info *ipinfo1 = (struct ebt_ip_extend_info *)m1->data;
++	struct ebt_ip_extend_info *ipinfo2 = (struct ebt_ip_extend_info *)m2->data;
++
++	if (ipinfo1->bitmask != ipinfo2->bitmask)
++		return 0;
++	if (ipinfo1->invflags != ipinfo2->invflags)
++		return 0;
++	if (ipinfo1->bitmask & EBT_IP_TOS_EXTEND) {
++		if (ipinfo1->tos[0] != ipinfo2->tos[0] ||
++            ipinfo1->tos[1] != ipinfo2->tos[1] ||
++            ipinfo1->tosmask != ipinfo2->tosmask) 
++			return 0;
++	}
++	if (ipinfo1->bitmask & EBT_IP_DSCP_EXTEND) {
++		if (ipinfo1->dscp != ipinfo2->dscp)
++			return 0;
++	}
++	return 1;
++}
++
++static struct ebt_u_match ip_extend_match =
++{
++	.name		= EBT_IP_MATCH_EXTEND,
++	.size		= sizeof(struct ebt_ip_extend_info),
++	.help		= print_help,
++	.init		= init,
++	.parse		= parse,
++	.final_check	= final_check,
++	.print		= print,
++	.compare	= compare,
++	.extra_ops	= opts,
++};
++
++static void _INIT(void)
++{
++	ebt_register_match(&ip_extend_match);
++}
+diff -Naur orig_ebtables-2.0.11/extensions/ebt_qos_map.c ebtables-2.0.11/extensions/ebt_qos_map.c
+--- orig_ebtables-2.0.11/extensions/ebt_qos_map.c	1970-01-01 08:00:00.000000000 +0800
++++ ebtables-2.0.11/extensions/ebt_qos_map.c	2020-03-18 10:41:59.229639828 +0800
+@@ -0,0 +1,114 @@
++/*
++ *	ebt_qos_map
++ *
++ */
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <getopt.h>
++#include "../include/ebtables_u.h"
++#include <include/linux/netfilter_bridge/ebt_qos_map.h>
++
++#define QOS_MAP_DSCP2PBIT  0x01
++#define QOS_MAP_DSCP2Q     0x02
++
++static struct option opts[] =
++{
++	{ "dscp2pbit" 	, required_argument, 0, QOS_MAP_DSCP2PBIT },
++	{ "dscp2q"    	, required_argument, 0, QOS_MAP_DSCP2Q },
++	{ 0 }
++};
++
++static void print_help()
++{
++	printf(
++	"QOSMAP target options:\n"
++	" --dscp2pbit value      : set pbit value based on dcsp field\n"
++	" --dscp2q    value      : set egress queue based on dcsp field\n");
++}
++
++static void init(struct ebt_entry_target *target)
++{
++	struct ebt_qos_map_info *qosinfo =
++	   (struct ebt_qos_map_info *)target->data;
++
++	qosinfo->dscp2pbit = 0;
++	qosinfo->dscp2q = 0;
++}
++
++static int parse(int c, char **argv, int argc,
++   const struct ebt_u_entry *entry, unsigned int *flags,
++   struct ebt_entry_target **target)
++{
++	struct ebt_qos_map_info *qosinfo = (struct ebt_qos_map_info *)(*target)->data;
++	char *end;
++
++	switch (c) {
++	case QOS_MAP_DSCP2PBIT:
++		ebt_check_option2(flags, QOS_MAP_DSCP2PBIT);
++		qosinfo->dscp2pbit = strtoul(optarg, &end, 0);
++		if (*end != '\0' || end == optarg)
++			ebt_print_error2("Bad --dscp2pbit value '%s'", optarg);
++			
++		break;
++				
++	case QOS_MAP_DSCP2Q:
++		ebt_check_option2(flags, QOS_MAP_DSCP2Q);
++		qosinfo->dscp2q = strtoul(optarg, &end, 0);
++		if (*end != '\0' || end == optarg)
++			ebt_print_error2("Bad --dscp2q value '%s'", optarg);
++			
++		break;
++
++	 default:
++		return 0;
++	}
++	return 1;
++}
++
++static void final_check(const struct ebt_u_entry *entry,
++   const struct ebt_entry_target *target, const char *name,
++   unsigned int hookmask, unsigned int time)
++{
++	struct ebt_qos_map_info *qosinfo = (struct ebt_qos_map_info *)target->data;
++		            
++	if((qosinfo->dscp2pbit == QOS_MAP_DSCP2PBIT) || (qosinfo->dscp2q== QOS_MAP_DSCP2Q)) {
++		if ((entry->ethproto != ETH_P_IPV6 && entry->ethproto != ETH_P_IP) || entry->invflags & EBT_IPROTO)
++			ebt_print_error("QOSMAP must be used with -p IPv4/IPv6");
++		
++	}
++			
++}
++
++static void print(const struct ebt_u_entry *entry,
++   const struct ebt_entry_target *target)
++{
++	struct ebt_qos_map_info *qosinfo = (struct ebt_qos_map_info *)target->data;
++
++	printf(" --dscp2pbit %d", qosinfo->dscp2pbit);
++	printf(" --dscp2q %d", qosinfo->dscp2q);
++}
++
++static int compare(const struct ebt_entry_target *t1,
++   const struct ebt_entry_target *t2)
++{
++	return 1;
++}
++
++static struct ebt_u_target qos_map_target =
++{
++	.name		= "QOSMAP",
++	.size		= sizeof(struct ebt_qos_map_info),
++	.help		= print_help,
++	.init		= init,
++	.parse		= parse,
++	.final_check	= final_check,
++	.print		= print,
++	.compare	= compare,
++	.extra_ops	= opts,
++};
++
++static void _INIT(void)
++{
++	ebt_register_target(&qos_map_target);
++}
+diff -Naur orig_ebtables-2.0.11/extensions/ebt_reject.c ebtables-2.0.11/extensions/ebt_reject.c
+--- orig_ebtables-2.0.11/extensions/ebt_reject.c	1970-01-01 08:00:00.000000000 +0800
++++ ebtables-2.0.11/extensions/ebt_reject.c	2020-03-18 10:41:59.229639828 +0800
+@@ -0,0 +1,90 @@
++/*
++ *	ebt_reject
++ *
++ */
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <getopt.h>
++#include "../include/ebtables_u.h"
++#include "../include/linux/netfilter_bridge/ebt_reject.h"
++
++#define EBT_REJECT_WITH  0x01
++
++static struct option opts[] =
++{
++	{ "reject-with" , required_argument, 0, EBT_REJECT_WITH },
++	{ 0 }
++};
++
++static void print_help()
++{
++	printf(
++	"REJECT target options:\n"
++	" --reject-with value      : reject reason\n");
++}
++
++static void init(struct ebt_entry_target *target)
++{
++    struct ebt_reject_info *reject_info = (struct ebt_reject_info *)target->data;
++
++	reject_info->with = -1;
++}
++
++static int parse(int c, char **argv, int argc,
++   const struct ebt_u_entry *entry, unsigned int *flags,
++   struct ebt_entry_target **target)
++{
++	struct ebt_reject_info *reject_info = (struct ebt_reject_info *)(*target)->data;
++	char *end;
++
++	switch (c) {
++	case EBT_REJECT_WITH:
++		reject_info->with = strtoul(optarg, &end, 0);
++		if (*end != '\0' || end == optarg)
++			ebt_print_error2("Bad --reject-with value '%s'", optarg);
++		break;
++	 default:
++		return 0;
++	}
++	return 1;
++}
++
++static void final_check(const struct ebt_u_entry *entry,
++   const struct ebt_entry_target *target, const char *name,
++   unsigned int hookmask, unsigned int time)
++{
++	return;
++}
++
++static void print(const struct ebt_u_entry *entry,
++   const struct ebt_entry_target *target)
++{
++	struct ebt_reject_info *reject_info = (struct ebt_reject_info *)target->data;
++
++	printf(" --reject-with %d", reject_info->with);
++}
++
++static int compare(const struct ebt_entry_target *t1,
++   const struct ebt_entry_target *t2)
++{
++	return 1;
++}
++
++static struct ebt_u_target reject_target =
++{
++	.name		= "REJECT",
++	.size		= sizeof(struct ebt_reject_info),
++	.help		= print_help,
++	.init		= init,
++	.parse		= parse,
++	.final_check= final_check,
++	.print		= print,
++	.compare	= compare,
++	.extra_ops	= opts,
++};
++
++static void _INIT(void)
++{
++	ebt_register_target(&reject_target);
++}
+diff -Naur orig_ebtables-2.0.11/extensions/ebt_skbvlan.c ebtables-2.0.11/extensions/ebt_skbvlan.c
+--- orig_ebtables-2.0.11/extensions/ebt_skbvlan.c	1970-01-01 08:00:00.000000000 +0800
++++ ebtables-2.0.11/extensions/ebt_skbvlan.c	2020-03-18 10:41:59.229639828 +0800
+@@ -0,0 +1,442 @@
++/*
++ * ebt_skbvlan
++ * Description: EBTables skbvlan extension module for userspace.
++ * Authors:  Jack Chang <jack.chang@broadcom.com>, ported from ebt_vlan.c
++ *           The following is the original disclaimer.
++ */
++/* ebt_vlan
++ * 
++ * Authors:
++ * Bart De Schuymer <bdschuym@pandora.be>
++ * Nick Fedchik <nick@fedchik.org.ua> 
++ *
++ * June, 2002
++ */
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <getopt.h>
++#include <ctype.h>
++#include "../include/ebtables_u.h"
++#include "../include/ethernetdb.h"
++#include <include/linux/netfilter_bridge/ebt_skbvlan_m.h>
++#include <linux/if_ether.h>
++
++#define NAME_VLAN_ID    "id"
++#define NAME_VLAN_PRIO  "prio"
++#define NAME_VLAN_ENCAP "encap"
++
++#define VLAN_ID    '1'
++#define VLAN_PRIO  '2'
++#define VLAN_ENCAP '3'
++#define VLAN_TAG_0 '4'
++#define VLAN_TAG_1 '5'
++#define VLAN_TAG_2 '6'
++#define VLAN_TAG_3 '7'
++#define VLAN_TPID_1 '8'
++#define VLAN_TPID_0 '9'
++
++#define MASK_VLAN_ALL 0xFFFFFFFF
++
++static struct option opts[] = {
++	{"skbvlan-id"   , required_argument, NULL, VLAN_ID},
++	{"skbvlan-prio" , required_argument, NULL, VLAN_PRIO},
++	{"skbvlan-encap", required_argument, NULL, VLAN_ENCAP},
++	{"skbvlan-vlantag0", required_argument, NULL, VLAN_TAG_0},
++	{"skbvlan-vlantag1", required_argument, NULL, VLAN_TAG_1},
++	{"skbvlan-vlantag2", required_argument, NULL, VLAN_TAG_2},
++	{"skbvlan-vlantag3", required_argument, NULL, VLAN_TAG_3},
++	{"skbvlan-vlantpid0", required_argument, NULL, VLAN_TPID_0},
++	{"skbvlan-vlantpid1", required_argument, NULL, VLAN_TPID_1},
++	{ 0 }
++};
++
++/*
++ * option inverse flags definition 
++ */
++#define OPT_VLAN_ID     0x0001
++#define OPT_VLAN_PRIO   0x0002
++#define OPT_VLAN_ENCAP  0x0004
++#define OPT_VLAN_TAG_0  0x0008
++#define OPT_VLAN_TAG_1  0x0010
++#define OPT_VLAN_TAG_2  0x0020
++#define OPT_VLAN_TAG_3  0x0040
++#define OPT_VLAN_TPID_0  0x0080
++#define OPT_VLAN_TPID_1  0x0100
++
++
++
++
++#define OPT_VLAN_FLAGS	(OPT_VLAN_ID | OPT_VLAN_PRIO | OPT_VLAN_ENCAP | OPT_VLAN_TAG_0 \
++	| OPT_VLAN_TAG_1 | OPT_VLAN_TAG_2 | OPT_VLAN_TAG_2 | OPT_VLAN_TPID_0 | \
++	OPT_VLAN_TPID_1)
++
++struct ethertypeent *ethent;
++
++static uint32_t parse_vlantag(const char *vlanstr)
++{
++	char *end;
++	uint32_t vlantag;
++
++	vlantag = strtoul(vlanstr, &end, 16);
++	if ((*end == '\0') || (*end == ':') || (*end == '/')) {
++		return vlantag;
++	}
++
++	ebt_print_error("Problem with specified tos '%s'", vlantag);
++	return 0;
++}
++
++static int parse_vlantag_mask(char *mask, uint32_t *mask2)
++{
++	char *end;
++
++	*mask2 = (uint32_t)strtoul(mask, &end, 16);
++
++	if (*end != '\0')
++		ebt_print_error("Problem with specified vlantag mask 0x%08X", mask2);
++
++	return 0;
++}
++
++static void
++parse_vlantag_range_mask(const char *vlantagstring, uint32_t *vlantag, uint32_t *mask)
++{
++	char *buffer;
++	char *cp;
++	char *p;
++
++	buffer = strdup(vlantagstring);
++	p = strrchr(buffer, '/');
++	cp = strchr(buffer, ':');
++
++	if (cp == NULL) {
++		vlantag[0] = vlantag[1] = parse_vlantag(buffer);
++	} else {
++		*cp = '\0';
++		cp++;
++		vlantag[0] = buffer[0] ? parse_vlantag(buffer) : 0;
++        if (ebt_errormsg[0] != '\0')
++			return;
++		vlantag[1] = cp[0] ? parse_vlantag(cp):MASK_VLAN_ALL;
++		if (ebt_errormsg[0] != '\0')
++			return;
++		
++		if (vlantag[0] > vlantag[1])
++			ebt_print_error("Invalid vlantag range (min > max)");
++	}
++
++	if (p != NULL) {
++		parse_vlantag_mask(p + 1, (uint32_t *)mask);
++	} else {
++		*mask = MASK_VLAN_ALL;
++	} 
++
++	free(buffer);
++}
++
++static void print_vlantag_range_mask(uint32_t *vlantag, uint32_t mask)
++{
++	char str[128];
++	int i;
++	char * p = str;
++
++	memset(str, 0, sizeof(str));
++	if (vlantag[0] == vlantag[1])
++		i = snprintf(str, sizeof(str), "0x%08X", vlantag[0]);
++	else
++		i = snprintf(str, sizeof(str),"0x%08X:0x%08X", vlantag[0], vlantag[1]);
++
++	if (mask != MASK_VLAN_ALL)
++		snprintf(p + i, sizeof(str) - i, "/0x%08X ", mask);
++	else
++		snprintf(p + i, sizeof(str) - i, " ");
++
++	printf("%s", str);
++}
++
++/*********************************************************************
++*  --skbvlan-vlantag0  find the first vlantag if the TPID is masked valid, if it has ! flag, it will search 
++*  with the remained masked section. otherwise,  it will match the first vlantag according to the mask value
++*
++*  --skbvlan-vlantag1  find the second vlantag if the TPID is masked valid, if it has ! flag, it will search 
++*  with the remained masked section. otherwise,  it will match the first vlantag according to the mask value
++*
++*  --skbvlan-vlantag2  find the first vlantag if the TPID is masked valid, if it has ! flag, it will search 
++*  with the remained masked section. otherwise,  it will match the first vlantag according to the mask value
++*
++*  --skbvlan-vlantag3  find the second vlantag if the TPID is masked valid, if it has ! flag, it will search 
++*  with the remained masked section. otherwise,  it will match the first vlantag according to the mask value
++*
++* --skbvlan-vlantpid0 find if the tpid exist in the vlantags.
++*
++* --skbvlan-vlantpid1 find if the tpid exist in the vlantags.
++*
++**********************************************************************/
++
++static void print_help()
++{
++	printf(
++"skbvlan options:\n"
++"--skbvlan-id [!] id       : vlan-tagged frame identifier, 0,1-4096 (integer)\n"
++"--skbvlan-prio [!] prio   : Priority-tagged frame's user priority, 0-7 (integer)\n"
++"--skbvlan-encap [!] encap : Encapsulated frame protocol (hexadecimal or name)\n"
++"--skbvlan-vlantag0 [!] vlantag[:vlantag][/mask] : first layer vlantag\n"
++"--skbvlan-vlantag1 [!] vlantag[:vlantag][/mask] : second layer vlantag\n"
++"--skbvlan-vlantag2 [!] vlantag[:vlantag][/mask] : first layer vlantag\n"
++"--skbvlan-vlantag3 [!] vlantag[:vlantag][/mask] : second layer vlantag\n"
++"--skbvlan-vlantpid0 [!] tpid : vlantag tpid\n"
++"--skbvlan-vlantpid1 [!] tpid : vlantag tpid\n"
++);
++}
++
++static void init(struct ebt_entry_match *match)
++{
++	struct ebt_skbvlan_m_info *vlaninfo = (struct ebt_skbvlan_m_info *) match->data;
++
++	memset(vlaninfo, 0, sizeof(struct ebt_skbvlan_m_info));
++}
++
++
++static int parse(int c, char **argv, int argc, const struct ebt_u_entry *entry,
++   unsigned int *flags, struct ebt_entry_match **match)
++{
++	struct ebt_skbvlan_m_info *vlaninfo = (struct ebt_skbvlan_m_info *) (*match)->data;
++	char *end;
++	struct ebt_skbvlan_m_info local;
++
++	switch (c) {
++	case VLAN_ID:
++		ebt_check_option2(flags, OPT_VLAN_ID);
++		if (ebt_check_inverse2(optarg))
++			vlaninfo->invflags |= EBT_SKBVLAN_ID;
++		local.id = strtoul(optarg, &end, 10);
++		if (local.id > 4094 || *end != '\0')
++			ebt_print_error2("Invalid --skbvlan-id range ('%s')", optarg);
++		vlaninfo->id = local.id;
++		vlaninfo->bitmask |= EBT_SKBVLAN_ID;
++		break;
++	case VLAN_PRIO:
++		ebt_check_option2(flags, OPT_VLAN_PRIO);
++		if (ebt_check_inverse2(optarg))
++			vlaninfo->invflags |= EBT_SKBVLAN_PRIO;
++		local.prio = strtoul(optarg, &end, 10);
++		if (local.prio >= 8 || *end != '\0')
++			ebt_print_error2("Invalid --skbvlan-prio range ('%s')", optarg);
++		vlaninfo->prio = local.prio;
++		vlaninfo->bitmask |= EBT_SKBVLAN_PRIO;
++		break;
++	case VLAN_ENCAP:
++		ebt_check_option2(flags, OPT_VLAN_ENCAP);
++		if (ebt_check_inverse2(optarg))
++			vlaninfo->invflags |= EBT_SKBVLAN_ENCAP;
++		local.encap = strtoul(optarg, &end, 16);
++		if (*end != '\0') {
++			ethent = getethertypebyname(optarg);
++			if (ethent == NULL)
++				ebt_print_error("Unknown --skbvlan-encap value ('%s')", optarg);
++			local.encap = ethent->e_ethertype;
++		}
++		if (local.encap < ETH_ZLEN)
++			ebt_print_error2("Invalid --skbvlan-encap range ('%s')", optarg);
++		vlaninfo->encap = htons(local.encap);
++		vlaninfo->bitmask |= EBT_SKBVLAN_ENCAP;
++		break;
++	case VLAN_TAG_0:
++		ebt_check_option2(flags, OPT_VLAN_TAG_0);
++		if (ebt_check_inverse2(optarg))
++			vlaninfo->invflags |= EBT_SKBVLAN_VLAN_TAG_0;
++		parse_vlantag_range_mask(optarg, vlaninfo->vlantag0, &vlaninfo->vlanmask0);
++		vlaninfo->bitmask |= EBT_SKBVLAN_VLAN_TAG_0;
++		break;
++	case VLAN_TAG_1:
++		ebt_check_option2(flags, OPT_VLAN_TAG_1);
++		if (ebt_check_inverse2(optarg))
++			vlaninfo->invflags |= EBT_SKBVLAN_VLAN_TAG_1;
++		parse_vlantag_range_mask(optarg, vlaninfo->vlantag1, &vlaninfo->vlanmask1);
++		vlaninfo->bitmask |= EBT_SKBVLAN_VLAN_TAG_1;
++		break;
++	case VLAN_TAG_2:
++		ebt_check_option2(flags, OPT_VLAN_TAG_2);
++		if (ebt_check_inverse2(optarg))
++			vlaninfo->invflags |= EBT_SKBVLAN_VLAN_TAG_2;
++		parse_vlantag_range_mask(optarg, vlaninfo->vlantag2, &vlaninfo->vlanmask2);
++		vlaninfo->bitmask |= EBT_SKBVLAN_VLAN_TAG_2;
++		break;
++	case VLAN_TAG_3:
++		ebt_check_option2(flags, OPT_VLAN_TAG_3);
++		if (ebt_check_inverse2(optarg))
++			vlaninfo->invflags |= EBT_SKBVLAN_VLAN_TAG_3;
++		parse_vlantag_range_mask(optarg, vlaninfo->vlantag3, &vlaninfo->vlanmask3);
++		vlaninfo->bitmask |= EBT_SKBVLAN_VLAN_TAG_3;
++		break;
++	case VLAN_TPID_0:
++		ebt_check_option2(flags, OPT_VLAN_TPID_0);
++		if (ebt_check_inverse2(optarg))
++			vlaninfo->invflags |= EBT_SKBVLAN_VLAN_TPID_0;
++		vlaninfo->vlantpid0 = strtoul(optarg, &end, 16);
++		if (*end != '\0')
++			ebt_print_error2("Invalid --skbvlan-vlantpid0 ('%s')", optarg);
++		vlaninfo->bitmask |= EBT_SKBVLAN_VLAN_TPID_0;
++		break;
++	case VLAN_TPID_1:
++		ebt_check_option2(flags, OPT_VLAN_TPID_1);
++		if (ebt_check_inverse2(optarg))
++			vlaninfo->invflags |= EBT_SKBVLAN_VLAN_TPID_1;
++		vlaninfo->vlantpid1 = strtoul(optarg, &end, 16);
++		if (*end != '\0')
++			ebt_print_error2("Invalid --skbvlan-vlantpid1 ('%s')", optarg);
++		vlaninfo->bitmask |= EBT_SKBVLAN_VLAN_TPID_1;
++		break;
++	default:
++		return 0;
++
++	}
++	return 1;
++}
++
++static void final_check(const struct ebt_u_entry *entry,
++   const struct ebt_entry_match *match,
++   const char *name, unsigned int hookmask, unsigned int time)
++{
++    return;
++	//if (entry->ethproto != ETH_P_8021Q || entry->invflags & EBT_IPROTO)
++		//ebt_print_error("For vlan filtering the protocol must be specified as 802_1Q");
++
++	/* Check if specified vlan-id=0 (priority-tagged frame condition) 
++	 * when vlan-prio was specified. */
++	/* I see no reason why a user should be prohibited to match on a perhaps impossible situation <BDS>
++	if (vlaninfo->bitmask & EBT_SKBVLAN_PRIO &&
++	    vlaninfo->id && vlaninfo->bitmask & EBT_SKBVLAN_ID)
++		ebt_print_error("When setting --vlan-prio the specified --vlan-id must be 0");*/
++}
++
++static void print(const struct ebt_u_entry *entry,
++   const struct ebt_entry_match *match)
++{
++	struct ebt_skbvlan_m_info *vlaninfo = (struct ebt_skbvlan_m_info *) match->data;
++
++	if (vlaninfo->bitmask & EBT_SKBVLAN_ID) {
++		printf("--skbvlan-id %s%d ", (vlaninfo->invflags & EBT_SKBVLAN_ID) ? "! " : "", vlaninfo->id);
++	}
++	if (vlaninfo->bitmask & EBT_SKBVLAN_PRIO) {
++		printf("--skbvlan-prio %s%d ", (vlaninfo->invflags & EBT_SKBVLAN_PRIO) ? "! " : "", vlaninfo->prio);
++	}
++	if (vlaninfo->bitmask & EBT_SKBVLAN_ENCAP) {
++		printf("--skbvlan-encap %s", (vlaninfo->invflags & EBT_SKBVLAN_ENCAP) ? "! " : "");
++		ethent = getethertypebynumber(ntohs(vlaninfo->encap));
++		if (ethent != NULL) {
++			printf("%s ", ethent->e_name);
++		} else {
++			printf("%4.4X ", ntohs(vlaninfo->encap));
++		}
++	}
++	if (vlaninfo->bitmask & EBT_SKBVLAN_VLAN_TAG_0) {
++		printf("--skbvlan-vlantag0 ");
++		if (vlaninfo->invflags & EBT_SKBVLAN_VLAN_TAG_0)
++			printf("! ");
++		print_vlantag_range_mask(vlaninfo->vlantag0, vlaninfo->vlanmask0);
++	}
++	if (vlaninfo->bitmask & EBT_SKBVLAN_VLAN_TAG_1) {
++		printf("--skbvlan-vlantag1 ");
++		if (vlaninfo->invflags & EBT_SKBVLAN_VLAN_TAG_1)
++			printf("! ");
++		print_vlantag_range_mask(vlaninfo->vlantag1, vlaninfo->vlanmask1);
++	}
++	if (vlaninfo->bitmask & EBT_SKBVLAN_VLAN_TAG_2) {
++		printf("--skbvlan-vlantag2 ");
++		if (vlaninfo->invflags & EBT_SKBVLAN_VLAN_TAG_2)
++			printf("! ");
++		print_vlantag_range_mask(vlaninfo->vlantag2, vlaninfo->vlanmask2);
++	}
++	if (vlaninfo->bitmask & EBT_SKBVLAN_VLAN_TAG_3) {
++		printf("--skbvlan-vlantag3 ");
++		if (vlaninfo->invflags & EBT_SKBVLAN_VLAN_TAG_3)
++			printf("! ");
++		print_vlantag_range_mask(vlaninfo->vlantag3, vlaninfo->vlanmask3);
++	}
++	if (vlaninfo->bitmask & EBT_SKBVLAN_VLAN_TPID_0) {
++		printf("--skbvlan-vlantpid0 ");
++		if (vlaninfo->invflags & EBT_SKBVLAN_VLAN_TPID_0)
++			printf("! ");
++		printf("0x%04X ", vlaninfo->vlantpid0);
++	}
++	if (vlaninfo->bitmask & EBT_SKBVLAN_VLAN_TPID_1) {
++		printf("--skbvlan-vlantpid1 ");
++		if (vlaninfo->invflags & EBT_SKBVLAN_VLAN_TPID_1)
++			printf("! ");
++		printf("0x%04X ", vlaninfo->vlantpid1);
++	}
++}
++
++static int compare(const struct ebt_entry_match *vlan1,
++   const struct ebt_entry_match *vlan2)
++{
++	struct ebt_skbvlan_m_info *vlaninfo1 = (struct ebt_skbvlan_m_info *) vlan1->data;
++	struct ebt_skbvlan_m_info *vlaninfo2 = (struct ebt_skbvlan_m_info *) vlan2->data;
++
++	if (vlaninfo1->bitmask != vlaninfo2->bitmask)
++		return 0;
++	if (vlaninfo1->invflags != vlaninfo2->invflags)
++		return 0;
++	if (vlaninfo1->bitmask & EBT_SKBVLAN_ID &&
++	    vlaninfo1->id != vlaninfo2->id)
++		return 0;
++	if (vlaninfo1->bitmask & EBT_SKBVLAN_PRIO &&
++	    vlaninfo1->prio != vlaninfo2->prio)
++		return 0;
++	if (vlaninfo1->bitmask & EBT_SKBVLAN_ENCAP &&
++	    vlaninfo1->encap != vlaninfo2->encap)
++		return 0;
++	if (vlaninfo1->bitmask & EBT_SKBVLAN_VLAN_TAG_0) {
++		if (vlaninfo1->vlantag0[0] != vlaninfo2->vlantag0[0] ||
++			vlaninfo1->vlantag0[1] != vlaninfo2->vlantag0[1] ||
++			vlaninfo1->vlanmask0 != vlaninfo2->vlanmask0)
++			return 0;
++	}
++	if (vlaninfo1->bitmask & EBT_SKBVLAN_VLAN_TAG_1) {
++		if (vlaninfo1->vlantag1[0] != vlaninfo2->vlantag1[0] ||
++			vlaninfo1->vlantag1[1] != vlaninfo2->vlantag1[1] ||
++			vlaninfo1->vlanmask1 != vlaninfo2->vlanmask1)
++			return 0;
++	}
++	if (vlaninfo1->bitmask & EBT_SKBVLAN_VLAN_TAG_2) {
++		if (vlaninfo1->vlantag2[0] != vlaninfo2->vlantag2[0] ||
++			vlaninfo1->vlantag2[1] != vlaninfo2->vlantag2[1] ||
++			vlaninfo1->vlanmask2 != vlaninfo2->vlanmask2)
++			return 0;
++	}
++	if (vlaninfo1->bitmask & EBT_SKBVLAN_VLAN_TAG_3) {
++		if (vlaninfo1->vlantag3[0] != vlaninfo2->vlantag3[0] ||
++			vlaninfo1->vlantag3[1] != vlaninfo2->vlantag3[1] ||
++			vlaninfo1->vlanmask3 != vlaninfo2->vlanmask3)
++			return 0;
++	}
++	if (vlaninfo1->bitmask & EBT_SKBVLAN_VLAN_TPID_0) {
++	    if (vlaninfo1->vlantpid0 != vlaninfo2->vlantpid0)
++			return 0;
++	}
++	if (vlaninfo1->bitmask & EBT_SKBVLAN_VLAN_TPID_1) {
++	    if (vlaninfo1->vlantpid1 != vlaninfo2->vlantpid1)
++			return 0;
++	}
++	// printf("[ebt_skbvlan]compare OK\n");
++	return 1;
++}
++
++static struct ebt_u_match skbvlan_match = {
++	.name		= "skbvlan",
++	.size		= sizeof(struct ebt_skbvlan_m_info),
++	.help		= print_help,
++	.init		= init,
++	.parse		= parse,
++	.final_check	= final_check,
++	.print		= print,
++	.compare	= compare,
++	.extra_ops	= opts,
++};
++
++static void _INIT(void)
++{
++	ebt_register_match(&skbvlan_match);
++}
+diff -Naur orig_ebtables-2.0.11/extensions/ebt_skiplog.c ebtables-2.0.11/extensions/ebt_skiplog.c
+--- orig_ebtables-2.0.11/extensions/ebt_skiplog.c	1970-01-01 08:00:00.000000000 +0800
++++ ebtables-2.0.11/extensions/ebt_skiplog.c	2020-03-18 10:41:59.229639828 +0800
+@@ -0,0 +1,62 @@
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <getopt.h>
++#include "../include/ebtables_u.h"
++
++static struct option opts[] =
++{
++	{ 0 }
++};
++
++static void print_help()
++{
++	printf(
++	"skiplog target takes no options:\n");
++}
++
++static void init(struct ebt_entry_target *target)
++{
++}
++
++static int parse(int c, char **argv, int argc,
++   const struct ebt_u_entry *entry, unsigned int *flags,
++   struct ebt_entry_target **target)
++{
++	return 1;
++}
++
++static void final_check(const struct ebt_u_entry *entry,
++   const struct ebt_entry_target *target, const char *name,
++   unsigned int hookmask, unsigned int time)
++{
++}
++
++static void print(const struct ebt_u_entry *entry,
++   const struct ebt_entry_target *target)
++{
++}
++
++static int compare(const struct ebt_entry_target *t1,
++   const struct ebt_entry_target *t2)
++{
++	return 1;
++}
++
++static struct ebt_u_target skiplog_target =
++{
++    "SKIPLOG",
++    0,
++    print_help,
++    init,
++    parse,
++    final_check,
++    print,
++    compare,
++    opts
++};
++
++static void _INIT(void)
++{
++	ebt_register_target(&skiplog_target);
++}
+diff -Naur orig_ebtables-2.0.11/extensions/ebt_time.c ebtables-2.0.11/extensions/ebt_time.c
+--- orig_ebtables-2.0.11/extensions/ebt_time.c	1970-01-01 08:00:00.000000000 +0800
++++ ebtables-2.0.11/extensions/ebt_time.c	2020-03-18 10:41:59.229639828 +0800
+@@ -0,0 +1,351 @@
++/*
++  Description: EBTables time extension module for userspace.
++  Authors:  Song Wang <songw@broadcom.com>, ported from netfilter/iptables
++            The following is the original disclaimer.
++
++ Shared library add-on to iptables to add TIME matching support. 
++*/
++#include <stdio.h>
++#include <netdb.h>
++#include <string.h>
++#include <stdlib.h>
++#include <getopt.h>
++#include <errno.h>
++
++#include "../include/ebtables_u.h"
++#include <include/linux/netfilter_bridge/ebt_time.h>
++#include <time.h>
++
++static int globaldays;
++
++/* Function which prints out usage message. */
++static void
++help(void)
++{
++	printf(
++"time options:\n"
++" --timestart value --timestop value --days listofdays\n"
++"          timestart value : HH:MM\n"
++"          timestop  value : HH:MM\n"
++"          listofdays value: a list of days to apply -> ie. Mon,Tue,Wed,Thu,Fri. Case sensitive\n");
++}
++
++static struct option opts[] = {
++	{ "timestart", required_argument, 0, '1' },
++	{ "timestop", required_argument, 0, '2' },
++	{ "days", required_argument, 0, '3'},
++	{0}
++};
++
++/* Initialize the match. */
++static void
++init(struct ebt_entry_match *m)
++{
++	globaldays = 0;
++}
++
++static int
++string_to_number(const char *s, unsigned int min, unsigned int max,
++                 unsigned int *ret)
++{
++        long number;
++        char *end;
++
++        /* Handle hex, octal, etc. */
++        errno = 0;
++        number = strtol(s, &end, 0);
++        if (*end == '\0' && end != s) {
++                /* we parsed a number, let's see if we want this */
++                if (errno != ERANGE && min <= number && number <= max) {
++                        *ret = number;
++                        return 0;
++                }
++        }
++        return -1;
++}
++
++/**
++ * param: part1, a pointer on a string 2 chars maximum long string, that will contain the hours.
++ * param: part2, a pointer on a string 2 chars maximum long string, that will contain the minutes.
++ * param: str_2_parse, the string to parse.
++ * return: 1 if ok, 0 if error.
++ */
++static int
++split_time(char **part1, char **part2, const char *str_2_parse)
++{
++	unsigned short int i,j=0;
++	char *rpart1 = *part1;
++	char *rpart2 = *part2;
++	unsigned char found_column = 0;
++
++	/* Check the length of the string */
++	if (strlen(str_2_parse) > 5)
++		return 0;
++	/* parse the first part until the ':' */
++	for (i=0; i<2; i++)
++	{
++		if (str_2_parse[i] == ':')
++			found_column = 1;
++		else
++			rpart1[i] = str_2_parse[i];
++	}
++	if (!found_column)
++		i++;
++	j=i;
++	/* parse the second part */
++	for (; i<strlen(str_2_parse); i++)
++	{
++		rpart2[i-j] = str_2_parse[i];
++	}
++	/* if we are here, format should be ok. */
++	return 1;
++}
++
++static void
++parse_time_string(unsigned int *hour, unsigned int *minute, const char *time)
++{
++	char *hours;
++	char *minutes;
++
++	hours = (char *)malloc(3);
++	minutes = (char *)malloc(3);
++	bzero((void *)hours, 3);
++	bzero((void *)minutes, 3);
++
++	if (split_time(&hours, &minutes, time) == 1)
++	{
++                /* if the number starts with 0, replace it with a space else
++                   this string_to_number will interpret it as octal !! */
++                if ((hours[0] == '0') && (hours[1] != '\0'))
++			hours[0] = ' ';
++		if ((minutes[0] == '0') && (minutes[1] != '\0'))
++			minutes[0] = ' ';
++
++		if((string_to_number(hours, 0, 23, hour) == -1) ||
++			(string_to_number(minutes, 0, 59, minute) == -1)) {
++			*hour = *minute = (-1);
++		}
++	}
++	if ((*hour != (-1)) && (*minute != (-1))) {
++		free(hours);
++		free(minutes);
++		return;
++	}
++
++	/* If we are here, there was a problem ..*/
++	ebt_print_error("invalid time %s specified, should be HH:MM format", time);
++}
++
++/* return 1->ok, return 0->error */
++static int
++parse_day(int *days, int from, int to, const char *string)
++{
++	char *dayread;
++	char *days_str[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
++	unsigned short int days_of_week[7] = {64, 32, 16, 8, 4, 2, 1};
++	unsigned int i;
++
++	dayread = (char *)malloc(4);
++	bzero(dayread, 4);
++	if ((to-from) != 3) {
++		free(dayread);
++		return 0;
++	}
++	for (i=from; i<to; i++)
++		dayread[i-from] = string[i];
++	for (i=0; i<7; i++)
++		if (strcmp(dayread, days_str[i]) == 0)
++		{
++			*days |= days_of_week[i];
++			free(dayread);
++			return 1;
++		}
++	/* if we are here, we didn't read a valid day */
++	free(dayread);
++	return 0;
++}
++
++static void
++parse_days_string(int *days, const char *daystring)
++{
++	int len;
++	int i=0;
++	//char *err = "invalid days specified, should be Sun,Mon,Tue... format";
++
++	len = strlen(daystring);
++	if (len < 3)
++		ebt_print_error("invalid days specified, should be Sun,Mon,Tue... format");	
++	while(i<len)
++	{
++		if (parse_day(days, i, i+3, daystring) == 0)
++			ebt_print_error("invalid days specified, should be Sun,Mon,Tue... format");
++		i += 4;
++	}
++}
++
++#define EBT_TIME_START 0x01
++#define EBT_TIME_STOP  0x02
++#define EBT_TIME_DAYS  0x04
++
++
++/* Function which parses command options; returns true if it
++   ate an option */
++static int
++parse(int c, char **argv, int argc,
++      const struct ebt_u_entry *entry,
++      unsigned int *flags, struct ebt_entry_match **match)
++{
++	struct ebt_time_info *timeinfo = (struct ebt_time_info *)(*match)->data;
++	unsigned int hours, minutes;
++
++	switch (c) /* c is the return value of getopt_long */
++	{
++		/* timestart */
++	case '1':
++		if (*flags & EBT_TIME_START)
++                        ebt_print_error("Can't specify --timestart twice");
++		parse_time_string(&hours, &minutes, optarg);
++		timeinfo->time_start = (hours * 60) + minutes;
++		*flags |= EBT_TIME_START;
++		break;
++		/* timestop */
++	case '2':
++		if (*flags & EBT_TIME_STOP)
++                        ebt_print_error("Can't specify --timestop twice");
++		parse_time_string(&hours, &minutes, optarg);
++		timeinfo->time_stop = (hours * 60) + minutes;
++		*flags |= EBT_TIME_STOP;
++		break;
++
++		/* days */
++	case '3':
++		if (*flags & EBT_TIME_DAYS)
++                        ebt_print_error("Can't specify --days twice");
++		parse_days_string(&globaldays, optarg);
++		timeinfo->days_match = globaldays;
++		*flags |= EBT_TIME_DAYS;
++		break;
++	default:
++		return 0;
++	}
++	/* default value if not specified */
++	if (!(*flags & EBT_TIME_START))
++		timeinfo->time_start = 0;
++	if (!(*flags & EBT_TIME_STOP))
++		timeinfo->time_stop = 1439; /* 23*60+59 = 1439*/
++	if (!(*flags & EBT_TIME_DAYS))
++		timeinfo->days_match = 0;
++
++	return 1;
++}
++
++/* Final check; must have specified --timestart --timestop --days. */
++static void
++final_check(const struct ebt_u_entry *entry,
++   const struct ebt_entry_match *match, const char *name,
++   unsigned int hookmask, unsigned int time)
++{
++        struct ebt_time_info *timeinfo = (struct ebt_time_info *)match->data;
++
++	/*
++	printf("start=%d,stop=%d,days=%d\n",
++		timeinfo->time_start,timeinfo->time_stop,timeinfo->days_match);
++	*/
++	if (timeinfo->time_stop < timeinfo->time_start)
++		ebt_print_error("stop time can't be smaller than start time");
++}
++
++
++static void
++print_days(int daynum)
++{
++	char *days[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
++	unsigned short int days_of_week[7] = {64, 32, 16, 8, 4, 2, 1};
++	unsigned short int i, nbdays=0;
++
++	for (i=0; i<7; i++) {
++		if ((days_of_week[i] & daynum) == days_of_week[i])
++		{
++			if (nbdays>0)
++				printf(",%s", days[i]);
++			else
++				printf("%s", days[i]);
++			++nbdays;
++		}
++	}
++}
++
++static void
++divide_time(int fulltime, int *hours, int *minutes)
++{
++	*hours = fulltime / 60;
++	*minutes = fulltime % 60;
++}
++
++/* Prints out the matchinfo. */
++static void
++print(const struct ebt_u_entry *entry,
++      const struct ebt_entry_match *match)
++{
++	struct ebt_time_info *time = ((struct ebt_time_info *)match->data);
++	int hour_start, hour_stop, minute_start, minute_stop;
++
++	divide_time(time->time_start, &hour_start, &minute_start);
++	divide_time(time->time_stop, &hour_stop, &minute_stop);
++	printf(" TIME from %d:%d to %d:%d on ",
++	       hour_start, minute_start,
++	       hour_stop, minute_stop);
++	print_days(time->days_match);
++	printf(" ");
++}
++
++#if 0
++/* Saves the data in parsable form to stdout. */
++static void
++save(const struct ipt_ip *ip, const struct ebt_entry_match *match)
++{
++	struct ebt_time_info *time = ((struct ebt_time_info *)match->data);
++	int hour_start, hour_stop, minute_start, minute_stop;
++
++	divide_time(time->time_start, &hour_start, &minute_start);
++	divide_time(time->time_stop, &hour_stop, &minute_stop);
++	printf(" --timestart %.2d:%.2d --timestop %.2d:%.2d --days ",
++	       hour_start, minute_start,
++	       hour_stop, minute_stop);
++	print_days(time->days_match);
++	printf(" ");
++}
++#endif
++
++static int 
++compare(const struct ebt_entry_match *m1, const struct ebt_entry_match *m2)
++{
++        struct ebt_time_info *timeinfo1 = (struct ebt_time_info *)m1->data;
++        struct ebt_time_info *timeinfo2 = (struct ebt_time_info *)m2->data;
++
++        if (timeinfo1->days_match != timeinfo2->days_match)
++                return 0;
++        if (timeinfo1->time_start != timeinfo2->time_start)
++                return 0;
++        if (timeinfo1->time_stop != timeinfo2->time_stop)
++                return 0;
++        return 1;
++}
++
++static struct ebt_u_match time_match =
++{
++   .name          = "time",
++   .size          = sizeof(struct ebt_time_info),
++   .help          = help,
++   .init          = init,
++   .parse         = parse,
++   .final_check   = final_check,
++   .print         = print,
++   .compare       = compare,
++   .extra_ops     = opts,
++};
++
++static void _INIT(void)
++{
++	ebt_register_match(&time_match);
++}
+diff -Naur orig_ebtables-2.0.11/extensions/ebt_u32.c ebtables-2.0.11/extensions/ebt_u32.c
+--- orig_ebtables-2.0.11/extensions/ebt_u32.c	1970-01-01 08:00:00.000000000 +0800
++++ ebtables-2.0.11/extensions/ebt_u32.c	2020-03-18 10:41:59.229639828 +0800
+@@ -0,0 +1,378 @@
++/* ebt_u32
++ * 
++ * Shared library add-on to iptables to add u32 matching,
++  * generalized matching on values found at packet offsets
++  *
++  * Detailed doc is in the kernel module source
++  * net/netfilter/xt_u32.c
++  *
++  * (C) 2002 by Don Cohen <don-netf@isis.cs3-inc.com>
++  * Released under the terms of GNU GPL v2
++  *
++  * Copyright © CC Computer Consultants GmbH, 2007
++  * Contact: <jengelh@computergmbh.de>
++  *
++  * extend by Broadcom at Jan, 2019 and change to ebt_u32
++  */
++
++
++#include <errno.h>
++#include <inttypes.h>
++#include <limits.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <ctype.h>
++#include <stdint.h>
++#include <getopt.h>
++#include <netdb.h>
++#include <stdbool.h>
++#include "../include/ebtables_u.h"
++#include <include/linux/netfilter_bridge/ebt_u32.h>
++
++
++#define OPT_U32 '1'
++
++static const struct option opts[] =
++{
++	{ "u32"           , required_argument, 0, OPT_U32 },
++	{ 0 }
++};
++
++/**
++ * xtables_strtou{i,l} - string to number conversion
++ * @s:	input string
++ * @end:	like strtoul's "end" pointer
++ * @value:	pointer for result
++ * @min:	minimum accepted value
++ * @max:	maximum accepted value
++ *
++ * If @end is NULL, we assume the caller wants a "strict strtoul", and hence
++ * "15a" is rejected.
++ * In either case, the value obtained is compared for min-max compliance.
++ * Base is always 0, i.e. autodetect depending on @s.
++ *
++ * Returns true/false whether number was accepted. On failure, *value has
++ * undefined contents.
++ */
++static bool ebtables_strtoul(const char *s, char **end, unsigned int *value,
++                     unsigned int min, unsigned int max)
++{
++	unsigned int v;
++	const char *p;
++	char *my_end;
++
++	errno = 0;
++	/* Since strtoul allows leading minus, we have to check for ourself. */
++	for (p = s; isspace(*p); ++p)
++		;
++	if (*p == '-')
++		return false;
++	v = strtoul(s, &my_end, 0);
++	if (my_end == s)
++		return false;
++	if (end != NULL)
++		*end = my_end;
++
++	if (errno != ERANGE && min <= v && (max == 0 || v <= max)) {
++		if (value != NULL)
++			*value = v;
++		if (end == NULL)
++			return *my_end == '\0';
++		return true;
++	}
++
++	return false;
++}
++
++static bool ebtables_strtoui(const char *s, char **end, unsigned int *value,
++                     unsigned int min, unsigned int max)
++{
++	unsigned int v;
++	bool ret;
++
++	ret = ebtables_strtoul(s, end, &v, min, max);
++	if (value != NULL)
++		*value = v;
++	return ret;
++}
++
++static void u32_dump(const struct ebt_u32_info *data)
++{
++	const struct ebt_u32_test *ct;
++	unsigned int testind, i;
++
++	printf(" \"");
++	for (testind = 0; testind < data->ntests; ++testind) {
++		ct = &data->tests[testind];
++
++		if (testind > 0)
++			printf("&&");
++
++		printf("0x%x", ct->location[0].number);
++		for (i = 1; i < ct->nnums; ++i) {
++			switch (ct->location[i].nextop) {
++			case EBT_U32_AND:
++				printf("&");
++				break;
++			case EBT_U32_LEFTSH:
++				printf("<<");
++				break;
++			case EBT_U32_RIGHTSH:
++				printf(">>");
++				break;
++			case EBT_U32_AT:
++				printf("@");
++				break;
++			}
++			printf("0x%x", ct->location[i].number);
++		}
++
++		printf("=");
++		for (i = 0; i < ct->nvalues; ++i) {
++			if (i > 0)
++				printf(",");
++			if (ct->value[i].min == ct->value[i].max)
++				printf("0x%x", ct->value[i].min);
++			else
++				printf("0x%x:0x%x", ct->value[i].min,
++				       ct->value[i].max);
++		}
++	}
++	putchar('\"');
++	printf(" ");
++}
++
++
++
++/* string_to_number() is not quite what we need here ... */
++static uint32_t parse_number(const char **s, int pos)
++{
++	unsigned int number;
++	char *end;
++
++	if (!ebtables_strtoui(*s, &end, &number, 0, UINT32_MAX) ||
++	    end == *s)
++		ebt_print_error2("u32: at char %d: not a number or out of range", pos);
++	*s = end;
++	return number;
++}
++
++static void ebt_parse_u32(char *optarg, struct ebt_u32_info * info)
++{
++	struct ebt_u32_info *data = info;
++	unsigned int testind = 0, locind = 0, valind = 0;
++	struct ebt_u32_test *ct = &data->tests[testind]; /* current test */
++	const char *arg = optarg; /* the argument string */
++	const char *start = optarg;
++	int state = 0;
++
++	/*
++	 * states:
++	 * 0 = looking for numbers and operations,
++	 * 1 = looking for ranges
++	 */
++	while (1) {
++		/* read next operand/number or range */
++		while (isspace(*arg))
++			++arg;
++
++		if (*arg == '\0') {
++			/* end of argument found */
++			if (state == 0)
++				ebt_print_error("u32: abrupt end of input after location specifier");
++			if (valind == 0)
++				ebt_print_error("u32: test ended with no value specified");
++
++			ct->nnums    = locind;
++			ct->nvalues  = valind;
++			data->ntests = ++testind;
++
++			if (testind > EBT_U32_MAXSIZE)
++				ebt_print_error("u32: at char %u: too many \"&&\"s", (unsigned int)(arg - start));
++
++			return;
++		}
++
++		if (state == 0) {
++			/*
++			 * reading location: read a number if nothing read yet,
++			 * otherwise either op number or = to end location spec
++			 */
++			if (*arg == '=') {
++				if (locind == 0) {
++					ebt_print_error("u32: at char %u: "
++					           "location spec missing",
++					           (unsigned int)(arg - start));
++				} else {
++					++arg;
++					state = 1;
++				}
++			} else {
++				if (locind != 0) {
++					/* need op before number */
++					if (*arg == '&') {
++						ct->location[locind].nextop = EBT_U32_AND;
++					} else if (*arg == '<') {
++						if (*++arg != '<')
++							ebt_print_error("u32: at char %u: a second '<' was expected", (unsigned int)(arg - start));
++						ct->location[locind].nextop = EBT_U32_LEFTSH;
++					} else if (*arg == '>') {
++						if (*++arg != '>')
++							ebt_print_error("u32: at char %u: a second '>' was expected", (unsigned int)(arg - start));
++						ct->location[locind].nextop = EBT_U32_RIGHTSH;
++					} else if (*arg == '@') {
++						ct->location[locind].nextop = EBT_U32_AT;
++					} else {
++						ebt_print_error("u32: at char %u: operator expected", (unsigned int)(arg - start));
++					}
++					++arg;
++				}
++				/* now a number; string_to_number skips white space? */
++				ct->location[locind].number =
++					parse_number(&arg, arg - start);
++				if (++locind > EBT_U32_MAXSIZE)
++					ebt_print_error("u32: at char %u: too many operators", (unsigned int)(arg - start));
++			}
++		} else {
++			/*
++			 * state 1 - reading values: read a range if nothing
++			 * read yet, otherwise either ,range or && to end
++			 * test spec
++			 */
++			if (*arg == '&') {
++				if (*++arg != '&')
++					ebt_print_error("u32: at char %u: a second '&' was expected", (unsigned int)(arg - start));
++				if (valind == 0) {
++					ebt_print_error("u32: at char %u: value spec missing", (unsigned int)(arg - start));
++				} else {
++					ct->nnums   = locind;
++					ct->nvalues = valind;
++					ct = &data->tests[++testind];
++					if (testind > EBT_U32_MAXSIZE)
++						ebt_print_error("u32: at char %u: too many \"&&\"s", (unsigned int)(arg - start));
++					++arg;
++					state  = 0;
++					locind = 0;
++					valind = 0;
++				}
++			} else { /* read value range */
++				if (valind > 0) { /* need , before number */
++					if (*arg != ',')
++						ebt_print_error("u32: at char %u: expected \",\" or \"&&\"", (unsigned int)(arg - start));
++					++arg;
++				}
++				ct->value[valind].min =
++					parse_number(&arg, arg - start);
++
++				while (isspace(*arg))
++					++arg;
++
++				if (*arg == ':') {
++					++arg;
++					ct->value[valind].max =
++						parse_number(&arg, arg-start);
++				} else {
++					ct->value[valind].max =
++						ct->value[valind].min;
++				}
++
++				if (++valind > EBT_U32_MAXSIZE)
++					ebt_print_error("u32: at char %u: too many \",\"s", (unsigned int)(arg - start));
++			}
++		}
++	}
++
++	printf("\r\nu32  ntest %u, invert %u\r\n", info->ntests, info->invert);
++	printf("\r\n test[0]  nnums %u, nvalues %u, "
++		"location[0].number %u, location[0].nexhop %u, value[0].min %u, value[0].max %u\r\n",
++		info->tests[0].nnums, info->tests[0].nvalues, info->tests[0].location[0].number, info->tests[0].location[0].nextop,
++		info->tests[0].value[0].min, info->tests[0].value[0].max);
++	
++}
++
++static void print_help(void)
++{
++	printf(
++		"u32 match options:\n"
++		"--u32 [!] tests\n"
++		"\t\t""tests := location \"=\" value | tests \"&&\" location \"=\" value\n"
++		"\t\t""value := range | value \",\" range\n"
++		"\t\t""range := number | number \":\" number\n"
++		"\t\t""location := number | location operator number\n"
++		"\t\t""operator := \"&\" | \"<<\" | \">>\" | \"@\"\n");
++}
++
++
++static void init(struct ebt_entry_match *match)
++{
++	struct ebt_u32_info *u32info = (struct ebt_u32_info *)match->data;
++
++	memset(u32info, 0, sizeof(struct ebt_u32_info));
++}
++
++static int parse(int c, char **argv, int argc, const struct ebt_u_entry *entry,
++   unsigned int *flags, struct ebt_entry_match **match)
++{
++	struct ebt_u32_info *u32info = (struct ebt_u32_info *)(*match)->data;
++
++	switch (c) {
++	case OPT_U32:
++		ebt_check_option2(flags, OPT_U32);
++		if (ebt_check_inverse2(optarg)) {
++		    u32info->invert = 1;
++		}
++		ebt_parse_u32(optarg, u32info);
++		break;
++	default:
++		return 0;
++	}
++	return 1;
++}
++
++static void final_check(const struct ebt_u_entry *entry,
++   const struct ebt_entry_match *match, const char *name,
++   unsigned int hookmask, unsigned int time)
++{
++}
++
++static void print(const struct ebt_u_entry *entry,
++   const struct ebt_entry_match *match)
++{
++	struct ebt_u32_info *u32info = (struct ebt_u32_info *)match->data;
++
++	printf("--u32 ");
++	if (u32info->invert)
++		printf("! ");
++	u32_dump(u32info);
++}
++
++static int compare(const struct ebt_entry_match *m1,
++   const struct ebt_entry_match *m2)
++{
++	struct ebt_u32_info *u32info1 = (struct ebt_u32_info *)m1->data;
++	struct ebt_u32_info *u32info2 = (struct ebt_u32_info *)m2->data;
++	
++	if (0 != memcmp(u32info1, u32info2, sizeof(struct ebt_u32_info)))
++		return 0;
++	
++	return 1;
++}
++
++static struct ebt_u_match u32_match =
++{
++	.name		= EBT_U32_MATCH,
++	.size		= sizeof(struct ebt_u32_info),
++	.help		= print_help,
++	.init		= init,
++	.parse		= parse,
++	.final_check	= final_check,
++	.print		= print,
++	.compare	= compare,
++	.extra_ops	= opts,
++};
++
++static void _INIT(void)
++{
++	ebt_register_match(&u32_match);
++}
+diff -Naur orig_ebtables-2.0.11/extensions/ebt_vtag.c ebtables-2.0.11/extensions/ebt_vtag.c
+--- orig_ebtables-2.0.11/extensions/ebt_vtag.c	1970-01-01 08:00:00.000000000 +0800
++++ ebtables-2.0.11/extensions/ebt_vtag.c	2020-03-18 10:41:59.229639828 +0800
+@@ -0,0 +1,123 @@
++/* ebt_vtag
++ *
++ * Authors:
++ * Jack Po-chin Chang <jack.chang@broadcom.com>
++ *
++ * Feb, 2020 
++ */
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <getopt.h>
++#include "../include/ebtables_u.h"
++#include <include/linux/netfilter_bridge/ebt_vtag_t.h>
++
++#define VTAG_TARGET   0X0001
++#define VTAG_SET      0X0002
++
++static struct option opts[] =
++{
++   { "vtag-target" , required_argument, 0, VTAG_TARGET  },
++   { "vtag-set"    , required_argument, 0, VTAG_SET     },
++   { 0 }
++};
++
++static void print_help()
++{
++   printf(
++   "vtag target options:\n"
++   " --vtag-set value     : Set vlan tag value\n"
++   " --vtag-target target : ACCEPT, DROP, RETURN or CONTINUE\n");
++}
++
++static void init(struct ebt_entry_target *target)
++{
++   struct ebt_vtag_t_info *vtaginfo =
++      (struct ebt_vtag_t_info *)target->data;
++
++   vtaginfo->target = EBT_ACCEPT;
++   vtaginfo->vtag = 0;
++}
++
++#define OPT_VTAG_TARGET   0X01
++#define OPT_VTAG_SET      0X02
++
++static int parse(int c, char **argv, int argc,
++   const struct ebt_u_entry *entry, unsigned int *flags,
++   struct ebt_entry_target **target)
++{
++   struct ebt_vtag_t_info *vtaginfo =
++      (struct ebt_vtag_t_info *)(*target)->data;
++   char *end;
++
++   switch(c) {
++   case VTAG_TARGET:
++      ebt_check_option2(flags, OPT_VTAG_TARGET);
++      if (FILL_TARGET(optarg, vtaginfo->target))
++         ebt_print_error2("Illegal --vtag-target target");
++      break;
++
++   case VTAG_SET:
++      ebt_check_option2(flags, OPT_VTAG_SET);
++      vtaginfo->vtag = strtoul(optarg, &end, 0);
++      if (*end != '\0' || end == optarg)
++         ebt_print_error2("Bad --vtag-set value '%s'", optarg);
++      break;
++
++   default:
++      return 0;
++   }
++   return 1;
++}
++
++static void final_check(const struct ebt_u_entry *entry,
++   const struct ebt_entry_target *target, const char *name,
++   unsigned int hookmask, unsigned int time)
++{
++	struct ebt_vtag_t_info *vtaginfo =
++	   (struct ebt_vtag_t_info *)target->data;
++
++	if (BASE_CHAIN && vtaginfo->target == EBT_RETURN)
++		ebt_print_error("--vtag-target RETURN not allowed on base chain");
++}
++
++static void print(const struct ebt_u_entry *entry,
++   const struct ebt_entry_target *target)
++{
++	struct ebt_vtag_t_info *vtaginfo =
++	   (struct ebt_vtag_t_info *)target->data;
++
++	printf(" --vtag-set 0x%x", vtaginfo->vtag);
++	printf(" --vtag-target %s", TARGET_NAME(vtaginfo->target));
++}
++
++static int compare(const struct ebt_entry_target *t1,
++   const struct ebt_entry_target *t2)
++{
++	struct ebt_vtag_t_info *vtaginfo1 =
++	   (struct ebt_vtag_t_info *)t1->data;
++	struct ebt_vtag_t_info *vtaginfo2 =
++	   (struct ebt_vtag_t_info *)t2->data;
++
++	return vtaginfo1->target == vtaginfo2->target &&
++	   vtaginfo1->vtag == vtaginfo2->vtag;
++}
++
++static struct ebt_u_target vtag_target =
++{
++	.name		= "vtag",
++	.size		= sizeof(struct ebt_vtag_t_info),
++	.help		= print_help,
++	.init		= init,
++	.parse		= parse,
++	.final_check	= final_check,
++	.print		= print,
++	.compare	= compare,
++	.extra_ops	= opts,
++};
++
++static void _INIT(void)
++{
++	ebt_register_target(&vtag_target);
++}
+diff -Naur orig_ebtables-2.0.11/extensions/ebt_wmm_mark.c ebtables-2.0.11/extensions/ebt_wmm_mark.c
+--- orig_ebtables-2.0.11/extensions/ebt_wmm_mark.c	1970-01-01 08:00:00.000000000 +0800
++++ ebtables-2.0.11/extensions/ebt_wmm_mark.c	2020-03-18 10:41:59.229639828 +0800
+@@ -0,0 +1,189 @@
++/*
++ *  ebt_wmm_mark
++ *
++ */
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <getopt.h>
++#include "../include/ebtables_u.h"
++#include <include/linux/netfilter_bridge/ebt_wmm_mark_t.h>
++
++//static int mark_supplied;
++#define WMM_MARK_TARGET '1'
++#define WMM_MARK_TAG  '2'
++#define WMM_MARK_POS  '4'
++#define WMM_MARK_SET  '8'
++
++static struct option opts[] =
++{
++	{ "wmm-mark-target" 	, required_argument, 0, WMM_MARK_TARGET },
++	{ "wmm-marktag"    	, required_argument, 0, WMM_MARK_TAG },
++	{ "wmm-markpos"      , required_argument, 0, WMM_MARK_POS },
++	{ "wmm-markset"    	, required_argument, 0, WMM_MARK_SET },	
++	{ 0 }
++};
++
++static void print_help()
++{
++	printf(
++	"wmm-mark target options:\n"
++	" --wmm-mark-target target : ACCEPT, DROP, RETURN or CONTINUE\n"	
++	" --wmm-marktag value      : set nfmark based on: dscp or vlan \n"
++	" --wmm-markset value      : set nfmark regardless of the mark based on\n"	
++	" --wmm-markpos            : bit offset of nfmark to set\n");
++}
++
++static void init(struct ebt_entry_target *target)
++{
++	struct ebt_wmm_mark_t_info *markinfo =
++	   (struct ebt_wmm_mark_t_info *)target->data;
++
++	markinfo->target = EBT_ACCEPT;
++	markinfo->mark = WMM_MARK_DSCP;
++	markinfo->markpos = PRIO_LOC_NFMARK;
++	markinfo->markset = WMM_MARK_VALUE_NONE;	
++//	mark_supplied = 0;
++}
++
++#define OPT_WMM_MARK_TARGET	0x01
++#define OPT_WMM_MARK_TAG   	0x02
++#define OPT_WMM_MARK_POS   	0x04
++#define OPT_WMM_MARK_SET   	0x08
++
++static int parse(int c, char **argv, int argc,
++   const struct ebt_u_entry *entry, unsigned int *flags,
++   struct ebt_entry_target **target)
++{
++	struct ebt_wmm_mark_t_info *markinfo =
++	   (struct ebt_wmm_mark_t_info *)(*target)->data;
++	char *end;
++
++	//printf("c:%d, flags=%d\n", c, *flags);
++	
++	switch (c) {
++	case WMM_MARK_TARGET:
++		ebt_check_option2(flags, OPT_WMM_MARK_TARGET);
++		if (FILL_TARGET(optarg, markinfo->target))
++			ebt_print_error2("Illegal --wmm-mark-target target");
++		break;		
++		
++	case WMM_MARK_POS:
++		ebt_check_option2(flags, OPT_WMM_MARK_POS);
++		markinfo->markpos = strtoul(optarg, &end, 0);
++		if (*end != '\0' || end == optarg)
++			ebt_print_error2("Bad --wmm-markpos value '%s'", optarg);
++			
++		//printf("--wmm-markpos %d\n", markinfo->markpos);
++
++		break;
++
++	case WMM_MARK_SET:
++		ebt_check_option2(flags, OPT_WMM_MARK_SET);
++		markinfo->markset = strtoul(optarg, &end, 0);
++		if (*end != '\0' || end == optarg)
++			ebt_print_error2("Bad --wmm-markset value '%s'", optarg);
++			
++		//printf("--wmm-markset %d\n", markinfo->markset);
++
++		break;
++				
++	case WMM_MARK_TAG:
++		ebt_check_option2(flags, OPT_WMM_MARK_TAG);
++		if (optind > argc)
++			ebt_print_error2("Missing wmm-marktag argument");
++		
++		if(!strcmp(argv[optind - 1], WMM_MARK_DSCP_STR)) {
++			//printf("--wmm-marktag dscp\n");
++			markinfo->mark = WMM_MARK_DSCP;
++			//mark_supplied = 1;
++		} else if(!strcmp(argv[optind - 1], WMM_MARK_8021D_STR)) {
++			//printf("--wmm-marktag vlan\n");
++			markinfo->mark = WMM_MARK_8021D;
++			//mark_supplied = 1;		
++		} else 
++			ebt_print_error2("Bad --wmm-marktagt value '%s'", argv[optind - 1]);
++							
++                break;
++	 default:
++		return 0;
++	}
++	return 1;
++}
++
++static void final_check(const struct ebt_u_entry *entry,
++   const struct ebt_entry_target *target, const char *name,
++   unsigned int hookmask, unsigned int time)
++{
++	struct ebt_wmm_mark_t_info *markinfo =
++	   (struct ebt_wmm_mark_t_info *)target->data;
++		            
++	if(markinfo->mark == WMM_MARK_DSCP) {
++		if ((entry->ethproto != ETH_P_IPV6 && entry->ethproto != ETH_P_IP) || entry->invflags & EBT_IPROTO)
++			ebt_print_error("wmm-mark dscp must be used with -p IPv4/IPv6");
++		
++	} else if (markinfo->mark == WMM_MARK_8021D) {
++		if (entry->ethproto != ETH_P_8021Q || entry->invflags & EBT_IPROTO)
++			ebt_print_error("wmm-mark vlan must be used with -p 802_1Q");	
++	}
++			
++	if (BASE_CHAIN && markinfo->target == EBT_RETURN)
++		ebt_print_error("--wmm-mark-target RETURN not allowed on base chain");
++}
++
++static void print(const struct ebt_u_entry *entry,
++   const struct ebt_entry_target *target)
++{
++	
++	struct ebt_wmm_mark_t_info *markinfo =
++	   (struct ebt_wmm_mark_t_info *)target->data;
++
++	printf(" --wmm-mark ");
++	switch (markinfo->mark){
++		case WMM_MARK_DSCP:
++			printf("dscp");
++			break;
++		case WMM_MARK_8021D:
++			printf("vlan");
++			break;			
++		default:
++			printf("invalid");
++					
++	}
++	
++	printf(" --wmm-markpos %d", markinfo->markpos);	
++	printf(" --wmm-markset %d", markinfo->markset);	
++	printf(" --wmm-mark-target %s", TARGET_NAME(markinfo->target));
++}
++
++static int compare(const struct ebt_entry_target *t1,
++   const struct ebt_entry_target *t2)
++{
++	struct ebt_wmm_mark_t_info *markinfo1 =
++	   (struct ebt_wmm_mark_t_info *)t1->data;
++	struct ebt_wmm_mark_t_info *markinfo2 =
++	   (struct ebt_wmm_mark_t_info *)t2->data;
++
++	return markinfo1->target == markinfo2->target &&
++	   markinfo1->mark == markinfo2->mark &&	
++	   markinfo1->markset == markinfo2->markset && 
++	   markinfo1->markpos == markinfo2->markpos;
++}
++
++static struct ebt_u_target mark_target =
++{
++	.name		= EBT_WMM_MARK_TARGET,
++	.size		= sizeof(struct ebt_wmm_mark_t_info),
++	.help		= print_help,
++	.init		= init,
++	.parse		= parse,
++	.final_check	= final_check,
++	.print		= print,
++	.compare	= compare,
++	.extra_ops	= opts,
++};
++
++static void _INIT(void)
++{
++	ebt_register_target(&mark_target);
++}
+diff -Naur orig_ebtables-2.0.11/include/linux/netfilter_bridge/ebt_reject.h ebtables-2.0.11/include/linux/netfilter_bridge/ebt_reject.h
+--- orig_ebtables-2.0.11/include/linux/netfilter_bridge/ebt_reject.h	1970-01-01 08:00:00.000000000 +0800
++++ ebtables-2.0.11/include/linux/netfilter_bridge/ebt_reject.h	2020-03-18 10:41:59.229639828 +0800
+@@ -0,0 +1,12 @@
++#ifndef __LINUX_BRIDGE_EBT_REJECT_H
++#define __LINUX_BRIDGE_EBT_REJECT_H
++
++enum ebt_reject_with {
++	EBT_ICMP6_POLICY_FAIL
++};
++
++struct ebt_reject_info {
++	int	with;	/* reject type */
++};
++
++#endif
+diff -Naur orig_ebtables-2.0.11/Makefile.in ebtables-2.0.11/Makefile.in
+--- orig_ebtables-2.0.11/Makefile.in	2019-12-02 23:27:46.000000000 +0800
++++ ebtables-2.0.11/Makefile.in	2020-03-31 08:47:19.487277656 +0800
+@@ -167,9 +167,19 @@
+ 	extensions/libebtc_la-ebt_standard.lo \
+ 	extensions/libebtc_la-ebt_stp.lo \
+ 	extensions/libebtc_la-ebt_string.lo \
+-	extensions/libebtc_la-ebt_ulog.lo \
+ 	extensions/libebtc_la-ebt_vlan.lo \
+-	extensions/libebtc_la-ebt_AUDIT.lo \
++	extensions/libebtc_la-ebt_qos_map.lo \
++	extensions/libebtc_la-ebt_time.lo \
++	extensions/libebtc_la-ebt_ftos.lo \
++	extensions/libebtc_la-ebt_skiplog.lo \
++	extensions/libebtc_la-ebt_skbvlan.lo \
++	extensions/libebtc_la-ebt_blog.lo \
++	extensions/libebtc_la-ebt_reject.lo \
++	extensions/libebtc_la-ebt_ip_extend.lo \
++	extensions/libebtc_la-ebt_ip6_extend.lo \
++	extensions/libebtc_la-ebt_u32.lo \
++	extensions/libebtc_la-ebt_vtag.lo \
++	extensions/libebtc_la-ebt_wmm_mark.lo \
+ 	extensions/libebtc_la-ebtable_broute.lo \
+ 	extensions/libebtc_la-ebtable_filter.lo \
+ 	extensions/libebtc_la-ebtable_nat.lo
+@@ -216,7 +226,7 @@
+ am__v_at_ = $(am__v_at_@AM_DEFAULT_V@)
+ am__v_at_0 = @
+ am__v_at_1 = 
+-DEFAULT_INCLUDES = -I.@am__isrc@
++DEFAULT_INCLUDES = -I.@am__isrc@ -I$(KERNEL_INCLUDES)
+ depcomp = $(SHELL) $(top_srcdir)/build-aux/depcomp
+ am__depfiles_maybe = depfiles
+ am__mv = mv -f
+@@ -436,7 +446,6 @@
+ AM_CPPFLAGS = ${regular_CPPFLAGS} -I${top_srcdir}/include \
+ 	-DPROGVERSION=\"${PACKAGE_VERSION}\" -DPROGNAME=\"${PACKAGE_NAME}\" \
+ 	-DPROGDATE=\"${PROGDATE}\" \
+-	-D_PATH_ETHERTYPES=\"${sysconfdir}/ethertypes\" \
+ 	-DLOCKFILE=\"${LOCKFILE}\" \
+ 	-DEBTD_ARGC_MAX=${EBTD_ARGC_MAX} -DEBTD_CMDLINE_MAXLN=${EBTD_CMDLINE_MAXLN} \
+ 	-DEBTD_PIPE=\"${PIPE}\" -DEBTD_PIPE_DIR=\"${PIPE_DIR}\"
+@@ -456,6 +465,10 @@
+ 	extensions/ebt_pkttype.c extensions/ebt_redirect.c \
+ 	extensions/ebt_standard.c extensions/ebt_stp.c extensions/ebt_string.c \
+ 	extensions/ebt_ulog.c extensions/ebt_vlan.c extensions/ebt_AUDIT.c \
++	extensions/ebt_qos_map.c extensions/ebt_time.c extensions/ebt_ftos.c \
++	extensions/ebt_skiplog.c extensions/ebt_skbvlan.c extensions/ebt_blog.c \
++	extensions/ebt_reject.c extensions/ebt_ip_extend.c extensions/ebt_ip6_extend.c \
++	extensions/ebt_u32.c extensions/ebt_vtag.c extensions/ebt_wmm_mark.c \
+ 	extensions/ebtable_broute.c extensions/ebtable_filter.c \
+ 	extensions/ebtable_nat.c
+ 
+@@ -603,6 +616,28 @@
+ 	extensions/$(DEPDIR)/$(am__dirstamp)
+ extensions/libebtc_la-ebt_vlan.lo: extensions/$(am__dirstamp) \
+ 	extensions/$(DEPDIR)/$(am__dirstamp)
++extensions/libebtc_la-ebt_qos_map.lo: extensions/$(am__dirstamp) \
++	extensions/$(DEPDIR)/$(am__dirstamp)
++extensions/libebtc_la-ebt_time.lo: extensions/$(am__dirstamp) \
++	extensions/$(DEPDIR)/$(am__dirstamp)
++extensions/libebtc_la-ebt_ftos.lo: extensions/$(am__dirstamp) \
++	extensions/$(DEPDIR)/$(am__dirstamp)
++extensions/libebtc_la-ebt_skiplog.lo: extensions/$(am__dirstamp) \
++	extensions/$(DEPDIR)/$(am__dirstamp)
++extensions/libebtc_la-ebt_skbvlan.lo: extensions/$(am__dirstamp) \
++	extensions/$(DEPDIR)/$(am__dirstamp)
++extensions/libebtc_la-ebt_blog.lo: extensions/$(am__dirstamp) \
++	extensions/$(DEPDIR)/$(am__dirstamp)
++extensions/libebtc_la-ebt_reject.lo: extensions/$(am__dirstamp) \
++	extensions/$(DEPDIR)/$(am__dirstamp)
++extensions/libebtc_la-ebt_ip_extend.lo: extensions/$(am__dirstamp) \
++	extensions/$(DEPDIR)/$(am__dirstamp)
++extensions/libebtc_la-ebt_ip6_extend.lo: extensions/$(am__dirstamp) \
++	extensions/$(DEPDIR)/$(am__dirstamp)
++extensions/libebtc_la-ebt_ip6_u32.lo: extensions/$(am__dirstamp) \
++	extensions/$(DEPDIR)/$(am__dirstamp)
++extensions/libebtc_la-ebt_ip6_wmm_mark.lo: extensions/$(am__dirstamp) \
++	extensions/$(DEPDIR)/$(am__dirstamp)
+ extensions/libebtc_la-ebt_AUDIT.lo: extensions/$(am__dirstamp) \
+ 	extensions/$(DEPDIR)/$(am__dirstamp)
+ extensions/libebtc_la-ebtable_broute.lo: extensions/$(am__dirstamp) \
+@@ -772,6 +807,18 @@
+ @AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebt_string.Plo@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebt_ulog.Plo@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebt_vlan.Plo@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebt_qos_map.Plo@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebt_time.Plo@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebt_ftos.Plo@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebt_skiplog.Plo@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebt_skbvlan.Plo@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebt_blog.Plo@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebt_reject.Plo@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebt_ip_extend.Plo@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebt_ip6_extend.Plo@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebt_u32.Plo@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebt_vtag.Plo@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebt_wmm_mark.Plo@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebtable_broute.Plo@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebtable_filter.Plo@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@extensions/$(DEPDIR)/libebtc_la-ebtable_nat.Plo@am__quote@
+@@ -968,6 +1015,90 @@
+ @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+ @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o extensions/libebtc_la-ebt_vlan.lo `test -f 'extensions/ebt_vlan.c' || echo '$(srcdir)/'`extensions/ebt_vlan.c
+ 
++extensions/libebtc_la-ebt_qos_map.lo: extensions/ebt_qos_map.c
++@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT extensions/libebtc_la-ebt_qos_map.lo -MD -MP -MF extensions/$(DEPDIR)/libebtc_la-ebt_qos_map.Tpo -c -o extensions/libebtc_la-ebt_qos_map.lo `test -f 'extensions/ebt_qos_map.c' || echo '$(srcdir)/'`extensions/ebt_qos_map.c
++@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) extensions/$(DEPDIR)/libebtc_la-ebt_qos_map.Tpo extensions/$(DEPDIR)/libebtc_la-ebt_qos_map.Plo
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='extensions/ebt_qos_map.c' object='extensions/libebtc_la-ebt_qos_map.lo' libtool=yes @AMDEPBACKSLASH@
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
++@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o extensions/libebtc_la-ebt_qos_map.lo `test -f 'extensions/ebt_qos_map.c' || echo '$(srcdir)/'`extensions/ebt_qos_map.c
++
++extensions/libebtc_la-ebt_time.lo: extensions/ebt_time.c
++@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT extensions/libebtc_la-ebt_time.lo -MD -MP -MF extensions/$(DEPDIR)/libebtc_la-ebt_time.Tpo -c -o extensions/libebtc_la-ebt_time.lo `test -f 'extensions/ebt_time.c' || echo '$(srcdir)/'`extensions/ebt_time.c
++@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) extensions/$(DEPDIR)/libebtc_la-ebt_time.Tpo extensions/$(DEPDIR)/libebtc_la-ebt_time.Plo
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='extensions/ebt_time.c' object='extensions/libebtc_la-ebt_time.lo' libtool=yes @AMDEPBACKSLASH@
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
++@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o extensions/libebtc_la-ebt_time.lo `test -f 'extensions/ebt_time.c' || echo '$(srcdir)/'`extensions/ebt_time.c
++
++extensions/libebtc_la-ebt_ftos.lo: extensions/ebt_ftos.c
++@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT extensions/libebtc_la-ebt_ftos.lo -MD -MP -MF extensions/$(DEPDIR)/libebtc_la-ebt_ftos.Tpo -c -o extensions/libebtc_la-ebt_ftos.lo `test -f 'extensions/ebt_ftos.c' || echo '$(srcdir)/'`extensions/ebt_ftos.c
++@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) extensions/$(DEPDIR)/libebtc_la-ebt_ftos.Tpo extensions/$(DEPDIR)/libebtc_la-ebt_ftos.Plo
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='extensions/ebt_ftos.c' object='extensions/libebtc_la-ebt_ftos.lo' libtool=yes @AMDEPBACKSLASH@
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
++@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o extensions/libebtc_la-ebt_ftos.lo `test -f 'extensions/ebt_ftos.c' || echo '$(srcdir)/'`extensions/ebt_ftos.c
++
++extensions/libebtc_la-ebt_skiplog.lo: extensions/ebt_skiplog.c
++@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT extensions/libebtc_la-ebt_skiplog.lo -MD -MP -MF extensions/$(DEPDIR)/libebtc_la-ebt_skiplog.Tpo -c -o extensions/libebtc_la-ebt_skiplog.lo `test -f 'extensions/ebt_skiplog.c' || echo '$(srcdir)/'`extensions/ebt_skiplog.c
++@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) extensions/$(DEPDIR)/libebtc_la-ebt_skiplog.Tpo extensions/$(DEPDIR)/libebtc_la-ebt_skiplog.Plo
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='extensions/ebt_skiplog.c' object='extensions/libebtc_la-ebt_skiplog.lo' libtool=yes @AMDEPBACKSLASH@
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
++@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o extensions/libebtc_la-ebt_skiplog.lo `test -f 'extensions/ebt_skiplog.c' || echo '$(srcdir)/'`extensions/ebt_skiplog.c
++
++extensions/libebtc_la-ebt_skbvlan.lo: extensions/ebt_skbvlan.c
++@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT extensions/libebtc_la-ebt_skbvlan.lo -MD -MP -MF extensions/$(DEPDIR)/libebtc_la-ebt_skbvlan.Tpo -c -o extensions/libebtc_la-ebt_skbvlan.lo `test -f 'extensions/ebt_skbvlan.c' || echo '$(srcdir)/'`extensions/ebt_skbvlan.c
++@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) extensions/$(DEPDIR)/libebtc_la-ebt_skbvlan.Tpo extensions/$(DEPDIR)/libebtc_la-ebt_skbvlan.Plo
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='extensions/ebt_skbvlan.c' object='extensions/libebtc_la-ebt_skbvlan.lo' libtool=yes @AMDEPBACKSLASH@
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
++@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o extensions/libebtc_la-ebt_skbvlan.lo `test -f 'extensions/ebt_skbvlan.c' || echo '$(srcdir)/'`extensions/ebt_skbvlan.c
++
++extensions/libebtc_la-ebt_blog.lo: extensions/ebt_blog.c
++@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT extensions/libebtc_la-ebt_blog.lo -MD -MP -MF extensions/$(DEPDIR)/libebtc_la-ebt_blog.Tpo -c -o extensions/libebtc_la-ebt_blog.lo `test -f 'extensions/ebt_blog.c' || echo '$(srcdir)/'`extensions/ebt_blog.c
++@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) extensions/$(DEPDIR)/libebtc_la-ebt_blog.Tpo extensions/$(DEPDIR)/libebtc_la-ebt_blog.Plo
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='extensions/ebt_blog.c' object='extensions/libebtc_la-ebt_blog.lo' libtool=yes @AMDEPBACKSLASH@
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
++@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o extensions/libebtc_la-ebt_blog.lo `test -f 'extensions/ebt_blog.c' || echo '$(srcdir)/'`extensions/ebt_blog.c
++
++extensions/libebtc_la-ebt_reject.lo: extensions/ebt_reject.c
++@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT extensions/libebtc_la-ebt_reject.lo -MD -MP -MF extensions/$(DEPDIR)/libebtc_la-ebt_reject.Tpo -c -o extensions/libebtc_la-ebt_reject.lo `test -f 'extensions/ebt_reject.c' || echo '$(srcdir)/'`extensions/ebt_reject.c
++@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) extensions/$(DEPDIR)/libebtc_la-ebt_reject.Tpo extensions/$(DEPDIR)/libebtc_la-ebt_reject.Plo
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='extensions/ebt_reject.c' object='extensions/libebtc_la-ebt_reject.lo' libtool=yes @AMDEPBACKSLASH@
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
++@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o extensions/libebtc_la-ebt_reject.lo `test -f 'extensions/ebt_reject.c' || echo '$(srcdir)/'`extensions/ebt_reject.c
++
++extensions/libebtc_la-ebt_ip_extend.lo: extensions/ebt_ip_extend.c
++@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT extensions/libebtc_la-ebt_ip_extend.lo -MD -MP -MF extensions/$(DEPDIR)/libebtc_la-ebt_ip_extend.Tpo -c -o extensions/libebtc_la-ebt_ip_extend.lo `test -f 'extensions/ebt_ip_extend.c' || echo '$(srcdir)/'`extensions/ebt_ip_extend.c
++@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) extensions/$(DEPDIR)/libebtc_la-ebt_ip_extend.Tpo extensions/$(DEPDIR)/libebtc_la-ebt_ip_extend.Plo
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='extensions/ebt_ip_extend.c' object='extensions/libebtc_la-ebt_ip_extend.lo' libtool=yes @AMDEPBACKSLASH@
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
++@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o extensions/libebtc_la-ebt_ip_extend.lo `test -f 'extensions/ebt_ip_extend.c' || echo '$(srcdir)/'`extensions/ebt_ip_extend.c
++
++extensions/libebtc_la-ebt_ip6_extend.lo: extensions/ebt_ip6_extend.c
++@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT extensions/libebtc_la-ebt_ip6_extend.lo -MD -MP -MF extensions/$(DEPDIR)/libebtc_la-ebt_ip6_extend.Tpo -c -o extensions/libebtc_la-ebt_ip6_extend.lo `test -f 'extensions/ebt_ip6_extend.c' || echo '$(srcdir)/'`extensions/ebt_ip6_extend.c
++@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) extensions/$(DEPDIR)/libebtc_la-ebt_ip6_extend.Tpo extensions/$(DEPDIR)/libebtc_la-ebt_ip6_extend.Plo
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='extensions/ebt_ip6_extend.c' object='extensions/libebtc_la-ebt_ip6_extend.lo' libtool=yes @AMDEPBACKSLASH@
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
++@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o extensions/libebtc_la-ebt_ip6_extend.lo `test -f 'extensions/ebt_ip6_extend.c' || echo '$(srcdir)/'`extensions/ebt_ip6_extend.c
++
++extensions/libebtc_la-ebt_u32.lo: extensions/ebt_u32.c
++@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT extensions/libebtc_la-ebt_u32.lo -MD -MP -MF extensions/$(DEPDIR)/libebtc_la-ebt_u32.Tpo -c -o extensions/libebtc_la-ebt_u32.lo `test -f 'extensions/ebt_u32.c' || echo '$(srcdir)/'`extensions/ebt_u32.c
++@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) extensions/$(DEPDIR)/libebtc_la-ebt_u32.Tpo extensions/$(DEPDIR)/libebtc_la-ebt_u32.Plo
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='extensions/ebt_u32.c' object='extensions/libebtc_la-ebt_u32.lo' libtool=yes @AMDEPBACKSLASH@
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
++@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o extensions/libebtc_la-ebt_u32.lo `test -f 'extensions/ebt_u32.c' || echo '$(srcdir)/'`extensions/ebt_u32.c
++
++extensions/libebtc_la-ebt_vtag.lo: extensions/ebt_vtag.c
++@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT extensions/libebtc_la-ebt_vtag.lo -MD -MP -MF extensions/$(DEPDIR)/libebtc_la-ebt_vtag.Tpo -c -o extensions/libebtc_la-ebt_vtag.lo `test -f 'extensions/ebt_vtag.c' || echo '$(srcdir)/'`extensions/ebt_vtag.c
++@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) extensions/$(DEPDIR)/libebtc_la-ebt_vtag.Tpo extensions/$(DEPDIR)/libebtc_la-ebt_vtag.Plo
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='extensions/ebt_vtag.c' object='extensions/libebtc_la-ebt_vtag.lo' libtool=yes @AMDEPBACKSLASH@
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
++@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o extensions/libebtc_la-ebt_vtag.lo `test -f 'extensions/ebt_vtag.c' || echo '$(srcdir)/'`extensions/ebt_vtag.c
++
++extensions/libebtc_la-ebt_wmm_mark.lo: extensions/ebt_wmm_mark.c
++@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT extensions/libebtc_la-ebt_wmm_mark.lo -MD -MP -MF extensions/$(DEPDIR)/libebtc_la-ebt_wmm_mark.Tpo -c -o extensions/libebtc_la-ebt_wmm_mark.lo `test -f 'extensions/ebt_wmm_mark.c' || echo '$(srcdir)/'`extensions/ebt_wmm_mark.c
++@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) extensions/$(DEPDIR)/libebtc_la-ebt_wmm_mark.Tpo extensions/$(DEPDIR)/libebtc_la-ebt_wmm_mark.Plo
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='extensions/ebt_wmm_mark.c' object='extensions/libebtc_la-ebt_wmm_mark.lo' libtool=yes @AMDEPBACKSLASH@
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
++@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o extensions/libebtc_la-ebt_wmm_mark.lo `test -f 'extensions/ebt_wmm_mark.c' || echo '$(srcdir)/'`extensions/ebt_wmm_mark.c
++
+ extensions/libebtc_la-ebt_AUDIT.lo: extensions/ebt_AUDIT.c
+ @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libebtc_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT extensions/libebtc_la-ebt_AUDIT.lo -MD -MP -MF extensions/$(DEPDIR)/libebtc_la-ebt_AUDIT.Tpo -c -o extensions/libebtc_la-ebt_AUDIT.lo `test -f 'extensions/ebt_AUDIT.c' || echo '$(srcdir)/'`extensions/ebt_AUDIT.c
+ @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) extensions/$(DEPDIR)/libebtc_la-ebt_AUDIT.Tpo extensions/$(DEPDIR)/libebtc_la-ebt_AUDIT.Plo

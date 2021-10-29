@@ -1,0 +1,13 @@
+#compile flag for kernel space module
+
+ifeq ($(SAMBA_ENABLE_FLAG),y)
+KBUILD_CFLAGS += -DSAMBA_ENABLE 
+endif
+
+ifeq ($(ARP_PROTECTION),y)
+KBUILD_CFLAGS += -DARP_PROTECTION
+endif
+
+ifeq ($(CONFIG_BCA_HNDROUTER),y)
+KBUILD_CFLAGS += -DBCA_HNDROUTER
+endif

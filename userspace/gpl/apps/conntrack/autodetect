@@ -1,0 +1,3 @@
+condition: ifneq ($(or $(BUILD_LIBNETFILTER_CONNTRACK),$(BUILD_LIBNETFILTER_CTIMEOUT),$(BUILD_LIBNETFILTER_QUEUE),$(BUILD_LIBNETFILTER_CTHELPER)),)
+dependson:  gpl/libs/nfnetlink gpl/libs/mnl gpl/libs/netfilter_conntrack gpl/libs/netfilter_cttimeout gpl/libs/netfilter_queue gpl/libs/netfilter_cthelper
+

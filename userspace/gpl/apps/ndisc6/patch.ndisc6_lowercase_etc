@@ -1,0 +1,29 @@
+diff -urN orig_ndisc6-1.0.4/src/ndisc.c ndisc6-1.0.4/src/ndisc.c
+--- orig_ndisc6-1.0.4/src/ndisc.c	2016-12-08 00:43:04.000000000 +0800
++++ ndisc6-1.0.4/src/ndisc.c	2019-12-01 11:45:46.999025917 +0800
+@@ -149,13 +149,13 @@
+ {
+ 	while (len > 1)
+ 	{
+-		printf ("%02X:", *ptr);
++		printf ("%02x:", *ptr);
+ 		ptr++;
+ 		len--;
+ 	}
+ 
+ 	if (len == 1)
+-		printf ("%02X\n", *ptr);
++		printf ("%02x\n", *ptr);
+ }
+ 
+ 
+@@ -887,9 +887,7 @@
+ {
+ 	printf (_(
+ "ndisc6: IPv6 Neighbor/Router Discovery userland tool %s (%s)\n"), VERSION, "$Rev$");
+-	printf (_(" built %s on %s\n"), __DATE__, PACKAGE_BUILD_HOSTNAME);
+ 
+-	printf (_("Configured with: %s\n"), PACKAGE_CONFIGURE_INVOCATION);
+ 	puts (_("Written by Remi Denis-Courmont\n"));
+ 
+ 	printf (_("Copyright (C) %u-%u Remi Denis-Courmont\n"), 2004, 2007);

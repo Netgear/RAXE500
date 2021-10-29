@@ -1,0 +1,1 @@
+config:arm::generic:linux:gcc 5.3.0 (Buildroot 2016.02):--prefix=/usr --arch=arm --target-os=linux --cc=arm-buildroot-linux-gnueabi-gcc --enable-cross-compile --disable-static --enable-shared

@@ -1,0 +1,1 @@
+dependson: public/libs/cares public/libs/curl public/libs/sqlite public/libs/jsonc public/libs/zlib

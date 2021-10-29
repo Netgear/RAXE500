@@ -1,0 +1,1107 @@
+                   =============================
+                   Release Notes for Samba 4.4.3
+                           May 2, 2016
+                   =============================
+
+
+This is the latest stable release of Samba 4.4.
+
+This release fixes some regressions introduced by the last security fixes.
+Please see bug https://bugzilla.samba.org/show_bug.cgi?id=11849 for a list of
+bugs addressing these regressions and more information.
+
+
+Changes since 4.4.2:
+--------------------
+
+o  Michael Adam <obnox@samba.org>
+   * BUG 11786: idmap_hash: Only allow the hash module for default idmap config.
+
+o  Jeremy Allison <jra@samba.org>
+   * BUG 11822: s3: libsmb: Fix error where short name length was read as 2
+     bytes, should be 1.
+
+o  Andrew Bartlett <abartlet@samba.org>
+   * BUG 11789: Fix returning of ldb.MessageElement.
+
+o  Ralph Boehme <slow@samba.org>
+   * BUG 11855: cleanupd: Restart as needed.
+
+o  Günther Deschner <gd@samba.org>
+   * BUG 11786: s3:winbindd:idmap: check loadparm in domain_has_idmap_config()
+     helper as well.
+   * BUG 11789: libsmb/pysmb: Add pytalloc-util dependency to fix the build.
+
+o  Volker Lendecke <vl@samba.org>
+   * BUG 11786: winbind: Fix CID 1357100: Unchecked return value.
+   * BUG 11816: nwrap: Fix the build on Solaris.
+   * BUG 11827: vfs_catia: Fix memleak.
+   * BUG 11878: smbd: Avoid large reads beyond EOF.
+
+o  Stefan Metzmacher <metze@samba.org>
+   * BUG 11789: s3:wscript: pylibsmb depends on pycredentials.
+   * BUG 11841: Fix NT_STATUS_ACCESS_DENIED when accessing Windows public share.
+   * BUG 11847: Only validate MIC if "map to guest" is not being used.
+   * BUG 11849: auth/ntlmssp: Add ntlmssp_{client,server}:force_old_spnego
+     option for testing.
+   * BUG 11850: NetAPP SMB servers don't negotiate NTLMSSP_SIGN.
+   * BUG 11858: Allow anonymous smb connections.
+   * BUG 11870: Fix ads_sasl_spnego_gensec_bind(KRB5).
+   * BUG 11872: Fix 'wbinfo -u' and 'net ads search'.
+
+o  Tom Mortensen <tomm@lime-technology.com>
+   * BUG 11875: nss_wins: Fix the hostent setup.
+
+o  Garming Sam <garming@catalyst.net.nz>
+   * BUG 11789: build: Mark explicit dependencies on pytalloc-util.
+
+o  Partha Sarathi <partha@exablox.com>
+   * BUG 11819: Fix the smb2_setinfo to handle FS info types and FSQUOTA
+     infolevel.
+
+o  Jorge Schrauwen <sjorge@blackdot.be>
+   * BUG 11816: configure: Don't check for inotify on illumos.
+
+o  Uri Simchoni <uri@samba.org>
+   * BUG 11806: vfs_acl_common: Avoid setting POSIX ACLs if "ignore system acls"
+     is set.
+   * BUG 11815: smbcquotas: print "NO LIMIT" only if returned quota value is 0.
+   * BUG 11852: libads: Record session expiry for spnego sasl binds.
+
+o  Hemanth Thummala <hemanth.thummala@nutanix.com>
+   * BUG 11840: Mask general purpose signals for notifyd.
+
+
+#######################################
+Reporting bugs & Development Discussion
+#######################################
+
+Please discuss this release on the samba-technical mailing list or by
+joining the #samba-technical IRC channel on irc.freenode.net.
+
+If you do report problems then please try to send high quality
+feedback. If you don't provide vital information to help us track down
+the problem then you will probably be ignored.  All bug reports should
+be filed under the "Samba 4.1 and newer" product in the project's Bugzilla
+database (https://bugzilla.samba.org/).
+
+
+======================================================================
+== Our Code, Our Bugs, Our Responsibility.
+== The Samba Team
+======================================================================
+
+
+Release notes for older releases follow:
+----------------------------------------
+
+                   =============================
+                   Release Notes for Samba 4.4.2
+                           April 12, 2016
+                   =============================
+
+This is a security release containing one additional
+regression fix for the security release 4.4.1.
+
+This fixes a regression that prevents things like 'net ads join'
+from working against a Windows 2003 domain.
+
+Changes since 4.4.1:
+====================
+
+o  Stefan Metzmacher <metze@samba.org>
+   * Bug 11804 - prerequisite backports for the security release on
+     April 12th, 2016
+
+
+-----------------------------------------------------------------------
+
+
+                   =============================
+                   Release Notes for Samba 4.4.1
+                           April 12, 2016
+                   =============================
+
+
+This is a security release in order to address the following CVEs:
+
+o  CVE-2015-5370 (Multiple errors in DCE-RPC code)
+
+o  CVE-2016-2110 (Man in the middle attacks possible with NTLMSSP)
+
+o  CVE-2016-2111 (NETLOGON Spoofing Vulnerability)
+
+o  CVE-2016-2112 (LDAP client and server don't enforce integrity)
+
+o  CVE-2016-2113 (Missing TLS certificate validation)
+
+o  CVE-2016-2114 ("server signing = mandatory" not enforced)
+
+o  CVE-2016-2115 (SMB IPC traffic is not integrity protected)
+
+o  CVE-2016-2118 (SAMR and LSA man in the middle attacks possible)
+
+The number of changes are rather huge for a security release,
+compared to typical security releases.
+
+Given the number of problems and the fact that they are all related
+to man in the middle attacks we decided to fix them all at once
+instead of splitting them.
+
+In order to prevent the man in the middle attacks it was required
+to change the (default) behavior for some protocols. Please see the
+"New smb.conf options" and "Behavior changes" sections below.
+
+=======
+Details
+=======
+
+o  CVE-2015-5370
+
+   Versions of Samba from 3.6.0 to 4.4.0 inclusive are vulnerable to
+   denial of service attacks (crashes and high cpu consumption)
+   in the DCE-RPC client and server implementations. In addition,
+   errors in validation of the DCE-RPC packets can lead to a downgrade
+   of a secure connection to an insecure one.
+
+   While we think it is unlikely, there's a nonzero chance for
+   a remote code execution attack against the client components,
+   which are used by smbd, winbindd and tools like net, rpcclient and
+   others. This may gain root access to the attacker.
+
+   The above applies all possible server roles Samba can operate in.
+
+   Note that versions before 3.6.0 had completely different marshalling
+   functions for the generic DCE-RPC layer. It's quite possible that
+   that code has similar problems!
+
+   The downgrade of a secure connection to an insecure one may
+   allow an attacker to take control of Active Directory object
+   handles created on a connection created from an Administrator
+   account and re-use them on the now non-privileged connection,
+   compromising the security of the Samba AD-DC.
+
+o  CVE-2016-2110:
+
+   There are several man in the middle attacks possible with
+   NTLMSSP authentication.
+
+   E.g. NTLMSSP_NEGOTIATE_SIGN and NTLMSSP_NEGOTIATE_SEAL
+   can be cleared by a man in the middle.
+
+   This was by protocol design in earlier Windows versions.
+
+   Windows Server 2003 RTM and Vista RTM introduced a way
+   to protect against the trivial downgrade.
+
+   See MsvAvFlags and flag 0x00000002 in
+   https://msdn.microsoft.com/en-us/library/cc236646.aspx
+
+   This new feature also implies support for a mechlistMIC
+   when used within SPNEGO, which may prevent downgrades
+   from other SPNEGO mechs, e.g. Kerberos, if sign or
+   seal is finally negotiated.
+
+   The Samba implementation doesn't enforce the existence of
+   required flags, which were requested by the application layer,
+   e.g. LDAP or SMB1 encryption (via the unix extensions).
+   As a result a man in the middle can take over the connection.
+   It is also possible to misguide client and/or
+   server to send unencrypted traffic even if encryption
+   was explicitly requested.
+
+   LDAP (with NTLMSSP authentication) is used as a client
+   by various admin tools of the Samba project,
+   e.g. "net", "samba-tool", "ldbsearch", "ldbedit", ...
+
+   As an active directory member server LDAP is also used
+   by the winbindd service when connecting to domain controllers.
+
+   Samba also offers an LDAP server when running as
+   active directory domain controller.
+
+   The NTLMSSP authentication used by the SMB1 encryption
+   is protected by smb signing, see CVE-2015-5296.
+
+o  CVE-2016-2111:
+
+   It's basically the same as CVE-2015-0005 for Windows:
+
+     The NETLOGON service in Microsoft Windows Server 2003 SP2,
+     Windows Server 2008 SP2 and R2 SP1, and Windows Server 2012 Gold
+     and R2, when a Domain Controller is configured, allows remote
+     attackers to spoof the computer name of a secure channel's
+     endpoint, and obtain sensitive session information, by running a
+     crafted application and leveraging the ability to sniff network
+     traffic, aka "NETLOGON Spoofing Vulnerability".
+
+   The vulnerability in Samba is worse as it doesn't require
+   credentials of a computer account in the domain.
+
+   This only applies to Samba running as classic primary domain controller,
+   classic backup domain controller or active directory domain controller.
+
+   The security patches introduce a new option called "raw NTLMv2 auth"
+   ("yes" or "no") for the [global] section in smb.conf.
+   Samba (the smbd process) will reject client using raw NTLMv2
+   without using NTLMSSP.
+
+   Note that this option also applies to Samba running as
+   standalone server and member server.
+
+   You should also consider using "lanman auth = no" (which is already the default)
+   and "ntlm auth = no". Have a look at the smb.conf manpage for further details,
+   as they might impact compatibility with older clients. These also
+   apply for all server roles.
+
+o  CVE-2016-2112:
+
+   Samba uses various LDAP client libraries, a builtin one and/or the system
+   ldap libraries (typically openldap).
+
+   As active directory domain controller Samba also provides an LDAP server.
+
+   Samba takes care of doing SASL (GSS-SPNEGO) authentication with Kerberos or NTLMSSP
+   for LDAP connections, including possible integrity (sign) and privacy (seal)
+   protection.
+
+   Samba has support for an option called "client ldap sasl wrapping" since version
+   3.2.0. Its default value has changed from "plain" to "sign" with version 4.2.0.
+
+   Tools using the builtin LDAP client library do not obey the
+   "client ldap sasl wrapping" option. This applies to tools like:
+   "samba-tool", "ldbsearch", "ldbedit" and more. Some of them have command line
+   options like "--sign" and "--encrypt". With the security update they will
+   also obey the "client ldap sasl wrapping" option as default.
+
+   In all cases, even if explicitly request via "client ldap sasl wrapping",
+   "--sign" or "--encrypt", the protection can be downgraded by a man in the
+   middle.
+
+   The LDAP server doesn't have an option to enforce strong authentication
+   yet. The security patches will introduce a new option called
+   "ldap server require strong auth", possible values are "no",
+   "allow_sasl_over_tls" and "yes".
+
+   As the default behavior was as "no" before, you may
+   have to explicitly change this option until all clients have
+   been adjusted to handle LDAP_STRONG_AUTH_REQUIRED errors.
+   Windows clients and Samba member servers already use
+   integrity protection.
+
+o  CVE-2016-2113:
+
+   Samba has support for TLS/SSL for some protocols:
+   ldap and http, but currently certificates are not
+   validated at all. While we have a "tls cafile" option,
+   the configured certificate is not used to validate
+   the server certificate.
+
+   This applies to ldaps:// connections triggered by tools like:
+   "ldbsearch", "ldbedit" and more. Note that it only applies
+   to the ldb tools when they are built as part of Samba or with Samba
+   extensions installed, which means the Samba builtin LDAP client library is
+   used.
+
+   It also applies to dcerpc client connections using ncacn_http (with https://),
+   which are only used by the openchange project. Support for ncacn_http
+   was introduced in version 4.2.0.
+
+   The security patches will introduce a new option called
+   "tls verify peer". Possible values are "no_check", "ca_only",
+   "ca_and_name_if_available", "ca_and_name" and "as_strict_as_possible".
+
+   If you use the self-signed certificates which are auto-generated
+   by Samba, you won't have a crl file and need to explicitly
+   set "tls verify peer = ca_and_name".
+
+o  CVE-2016-2114
+
+   Due to a regression introduced in Samba 4.0.0,
+   an explicit "server signing = mandatory" in the [global] section
+   of the smb.conf was not enforced for clients using the SMB1 protocol.
+
+   As a result it does not enforce smb signing and allows man in the middle attacks.
+
+   This problem applies to all possible server roles:
+   standalone server, member server, classic primary domain controller,
+   classic backup domain controller and active directory domain controller.
+
+   In addition, when Samba is configured with "server role = active directory domain controller"
+   the effective default for the "server signing" option should be "mandatory".
+
+   During the early development of Samba 4 we had a new experimental
+   file server located under source4/smb_server. But before
+   the final 4.0.0 release we switched back to the file server
+   under source3/smbd.
+
+   But the logic for the correct default of "server signing" was not
+   ported correctly ported.
+
+   Note that the default for server roles other than active directory domain
+   controller, is "off" because of performance reasons.
+
+o  CVE-2016-2115:
+
+   Samba has an option called "client signing", this is turned off by default
+   for performance reasons on file transfers.
+
+   This option is also used when using DCERPC with ncacn_np.
+
+   In order to get integrity protection for ipc related communication
+   by default the "client ipc signing" option is introduced.
+   The effective default for this new option is "mandatory".
+
+   In order to be compatible with more SMB server implementations,
+   the following additional options are introduced:
+   "client ipc min protocol" ("NT1" by default) and
+   "client ipc max protocol" (the highest support SMB2/3 dialect by default).
+   These options overwrite the "client min protocol" and "client max protocol"
+   options, because the default for "client max protocol" is still "NT1".
+   The reason for this is the fact that all SMB2/3 support SMB signing,
+   while there are still SMB1 implementations which don't offer SMB signing
+   by default (this includes Samba versions before 4.0.0).
+
+   Note that winbindd (in versions 4.2.0 and higher) enforces SMB signing
+   against active directory domain controllers despite of the
+   "client signing" and "client ipc signing" options.
+
+o  CVE-2016-2118 (a.k.a. BADLOCK):
+
+   The Security Account Manager Remote Protocol [MS-SAMR] and the
+   Local Security Authority (Domain Policy) Remote Protocol [MS-LSAD]
+   are both vulnerable to man in the middle attacks. Both are application level
+   protocols based on the generic DCE 1.1 Remote Procedure Call (DCERPC) protocol.
+
+   These protocols are typically available on all Windows installations
+   as well as every Samba server. They are used to maintain
+   the Security Account Manager Database. This applies to all
+   roles, e.g. standalone, domain member, domain controller.
+
+   Any authenticated DCERPC connection a client initiates against a server
+   can be used by a man in the middle to impersonate the authenticated user
+   against the SAMR or LSAD service on the server.
+
+   The client chosen application protocol, auth type (e.g. Kerberos or NTLMSSP)
+   and auth level (NONE, CONNECT, PKT_INTEGRITY, PKT_PRIVACY) do not matter
+   in this case. A man in the middle can change auth level to CONNECT
+   (which means authentication without message protection) and take over
+   the connection.
+
+   As a result, a man in the middle is able to get read/write access to the
+   Security Account Manager Database, which reveals all passwords
+   and any other potential sensitive information.
+
+   Samba running as an active directory domain controller is additionally
+   missing checks to enforce PKT_PRIVACY for the
+   Directory Replication Service Remote Protocol [MS-DRSR] (drsuapi)
+   and the BackupKey Remote Protocol [MS-BKRP] (backupkey).
+   The Domain Name Service Server Management Protocol [MS-DNSP] (dnsserver)
+   is not enforcing at least PKT_INTEGRITY.
+
+====================
+New smb.conf options
+====================
+
+  allow dcerpc auth level connect (G)
+
+    This option controls whether DCERPC services are allowed to be used with
+    DCERPC_AUTH_LEVEL_CONNECT, which provides authentication, but no per
+    message integrity nor privacy protection.
+
+    Some interfaces like samr, lsarpc and netlogon have a hard-coded default
+    of no and epmapper, mgmt and rpcecho have a hard-coded default of yes.
+
+    The behavior can be overwritten per interface name (e.g. lsarpc,
+    netlogon, samr, srvsvc, winreg, wkssvc ...) by using
+    'allow dcerpc auth level connect:interface = yes' as option.
+
+    This option yields precedence to the implementation specific restrictions.
+    E.g. the drsuapi and backupkey protocols require DCERPC_AUTH_LEVEL_PRIVACY.
+    The dnsserver protocol requires DCERPC_AUTH_LEVEL_INTEGRITY.
+
+    Default: allow dcerpc auth level connect = no
+
+    Example: allow dcerpc auth level connect = yes
+
+  client ipc signing (G)
+
+    This controls whether the client is allowed or required to use
+    SMB signing for IPC$ connections as DCERPC transport. Possible
+    values are auto, mandatory and disabled.
+
+    When set to mandatory or default, SMB signing is required.
+
+    When set to auto, SMB signing is offered, but not enforced and
+    if set to disabled, SMB signing is not offered either.
+
+    Connections from winbindd to Active Directory Domain Controllers
+    always enforce signing.
+
+    Default: client ipc signing = default
+
+  client ipc max protocol (G)
+
+    The value of the parameter (a string) is the highest protocol level that will
+    be supported for IPC$ connections as DCERPC transport.
+
+    Normally this option should not be set as the automatic negotiation phase
+    in the SMB protocol takes care of choosing the appropriate protocol.
+
+    The value default refers to the latest supported protocol, currently SMB3_11.
+
+    See client max protocol for a full list of available protocols.
+    The values CORE, COREPLUS, LANMAN1, LANMAN2 are silently upgraded to NT1.
+
+    Default: client ipc max protocol = default
+
+    Example: client ipc max protocol = SMB2_10
+
+  client ipc min protocol (G)
+
+    This setting controls the minimum protocol version that the will be
+    attempted to use for IPC$ connections as DCERPC transport.
+
+    Normally this option should not be set as the automatic negotiation phase
+    in the SMB protocol takes care of choosing the appropriate protocol.
+
+    The value default refers to the higher value of NT1 and the
+    effective value of "client min protocol".
+
+    See client max protocol for a full list of available protocols.
+    The values CORE, COREPLUS, LANMAN1, LANMAN2 are silently upgraded to NT1.
+
+    Default: client ipc min protocol = default
+
+    Example: client ipc min protocol = SMB3_11
+
+  ldap server require strong auth (G)
+
+    The ldap server require strong auth defines whether the
+    ldap server requires ldap traffic to be signed or
+    signed and encrypted (sealed). Possible values are no,
+    allow_sasl_over_tls and yes.
+
+    A value of no allows simple and sasl binds over all transports.
+
+    A value of allow_sasl_over_tls allows simple and sasl binds (without sign or seal)
+    over TLS encrypted connections. Unencrypted connections only
+    allow sasl binds with sign or seal.
+
+    A value of yes allows only simple binds over TLS encrypted connections.
+    Unencrypted connections only allow sasl binds with sign or seal.
+
+    Default: ldap server require strong auth = yes
+
+  raw NTLMv2 auth (G)
+
+    This parameter determines whether or not smbd(8) will allow SMB1 clients
+    without extended security (without SPNEGO) to use NTLMv2 authentication.
+
+    If this option, lanman auth and ntlm auth are all disabled, then only
+    clients with SPNEGO support will be permitted. That means NTLMv2 is only
+    supported within NTLMSSP.
+
+    Default: raw NTLMv2 auth = no
+
+  tls verify peer (G)
+
+    This controls if and how strict the client will verify the peer's
+    certificate and name. Possible values are (in increasing order): no_check,
+    ca_only, ca_and_name_if_available, ca_and_name and as_strict_as_possible.
+
+    When set to no_check the certificate is not verified at all,
+    which allows trivial man in the middle attacks.
+
+    When set to ca_only the certificate is verified to be signed from a ca
+    specified in the "tls ca file" option. Setting "tls ca file" to a valid file
+    is required. The certificate lifetime is also verified. If the "tls crl file"
+    option is configured, the certificate is also verified against
+    the ca crl.
+
+    When set to ca_and_name_if_available all checks from ca_only are performed.
+    In addition, the peer hostname is verified against the certificate's
+    name, if it is provided by the application layer and not given as
+    an ip address string.
+
+    When set to ca_and_name all checks from ca_and_name_if_available are performed.
+    In addition the peer hostname needs to be provided and even an ip
+    address is checked against the certificate's name.
+
+    When set to as_strict_as_possible all checks from ca_and_name are performed.
+    In addition the "tls crl file" needs to be configured. Future versions
+    of Samba may implement additional checks.
+
+    Default: tls verify peer = as_strict_as_possible
+
+  tls priority (G) (backported from Samba 4.3 to Samba 4.2)
+
+    This option can be set to a string describing the TLS protocols to be
+    supported in the parts of Samba that use GnuTLS, specifically the AD DC.
+
+    The default turns off SSLv3, as this protocol is no longer considered
+    secure after CVE-2014-3566 (otherwise known as POODLE) impacted SSLv3 use
+    in HTTPS applications.
+
+    The valid options are described in the GNUTLS Priority-Strings
+    documentation at http://gnutls.org/manual/html_node/Priority-Strings.html
+
+    Default: tls priority = NORMAL:-VERS-SSL3.0
+
+================
+Behavior changes
+================
+
+o  The default auth level for authenticated binds has changed from
+   DCERPC_AUTH_LEVEL_CONNECT to DCERPC_AUTH_LEVEL_INTEGRITY.
+   That means ncacn_ip_tcp:server is now implicitly the same
+   as ncacn_ip_tcp:server[sign] and offers a similar protection
+   as ncacn_np:server, which relies on smb signing.
+
+o  The following constraints are applied to SMB1 connections:
+
+   - "client lanman auth = yes" is now consistently
+     required for authenticated connections using the
+     SMB1 LANMAN2 dialect.
+   - "client ntlmv2 auth = yes" and "client use spnego = yes"
+     (both the default values), require extended security (SPNEGO)
+     support from the server. That means NTLMv2 is only used within
+     NTLMSSP.
+
+o  Tools like "samba-tool", "ldbsearch", "ldbedit" and more obey the
+   default of "client ldap sasl wrapping = sign". Even with
+   "client ldap sasl wrapping = plain" they will automatically upgrade
+   to "sign" when getting LDAP_STRONG_AUTH_REQUIRED from the LDAP
+   server.
+
+Changes since 4.4.0:
+====================
+
+o  Jeremy Allison <jra@samba.org>
+   * Bug 11344 - CVE-2015-5370: Multiple errors in DCE-RPC code.
+
+o  Christian Ambach <ambi@samba.org>
+   * Bug 11804 - prerequisite backports for the security release on
+     April 12th, 2016.
+
+o  Ralph Boehme <slow@samba.org>
+   * Bug 11644 - CVE-2016-2112: The LDAP client and server don't enforce
+     integrity protection.
+
+o  Günther Deschner <gd@samba.org>
+   * Bug 11749 - CVE-2016-2111: NETLOGON Spoofing Vulnerability.
+
+   * Bug 11804 - prerequisite backports for the security release on
+     April 12th, 2016.
+
+o  Volker Lendecke <vl@samba.org>
+   * Bug 11804 - prerequisite backports for the security release on
+     April 12th, 2016.
+
+o  Stefan Metzmacher <metze@samba.org>
+   * Bug 11344 - CVE-2015-5370: Multiple errors in DCE-RPC code.
+
+   * Bug 11616 - CVE-2016-2118: SAMR and LSA man in the middle attacks possible.
+
+   * Bug 11644 - CVE-2016-2112: The LDAP client and server doesn't enforce
+     integrity protection.
+
+   * Bug 11687 - CVE-2016-2114: "server signing = mandatory" not enforced.
+
+   * Bug 11688 - CVE-2016-2110: Man in the middle attacks possible with NTLMSSP.
+
+   * Bug 11749 - CVE-2016-2111: NETLOGON Spoofing Vulnerability.
+
+   * Bug 11752 - CVE-2016-2113: Missing TLS certificate validation allows man in
+     the middle attacks.
+
+   * Bug 11756 - CVE-2016-2115: SMB client connections for IPC traffic are not
+     integrity protected.
+
+   * Bug 11804 - prerequisite backports for the security release on
+     April 12th, 2016.
+
+
+#######################################
+Reporting bugs & Development Discussion
+#######################################
+
+Please discuss this release on the samba-technical mailing list or by
+joining the #samba-technical IRC channel on irc.freenode.net.
+
+If you do report problems then please try to send high quality
+feedback. If you don't provide vital information to help us track down
+the problem then you will probably be ignored.  All bug reports should
+be filed under the "Samba 4.1 and newer" product in the project's Bugzilla
+database (https://bugzilla.samba.org/).
+
+
+======================================================================
+== Our Code, Our Bugs, Our Responsibility.
+== The Samba Team
+======================================================================
+
+
+----------------------------------------------------------------------
+
+
+                   =============================
+                   Release Notes for Samba 4.4.0
+                           March 22, 2016
+                   =============================
+
+
+This is the first stable release of the Samba 4.4 release series.
+
+
+UPGRADING
+=========
+
+Nothing special.
+
+
+NEW FEATURES/CHANGES
+====================
+
+Asynchronous flush requests
+---------------------------
+
+Flush requests from SMB2/3 clients are handled asynchronously and do
+not block the processing of other requests. Note that 'strict sync'
+has to be set to 'yes' for Samba to honor flush requests from SMB
+clients.
+
+s3: smbd
+--------
+
+Remove '--with-aio-support' configure option. We no longer would ever prefer
+POSIX-RT aio, use pthread_aio instead.
+
+samba-tool sites
+----------------
+
+The 'samba-tool sites' subcommand can now be run against another server by
+specifying an LDB URL using the '-H' option and not against the local database
+only (which is still the default when no URL is given).
+
+samba-tool domain demote
+------------------------
+
+Add '--remove-other-dead-server' option to 'samba-tool domain demote'
+subcommand. The new version of this tool now can remove another DC that is
+itself offline.  The '--remove-other-dead-server' removes as many references
+to the DC as possible.
+
+samba-tool drs clone-dc-database
+--------------------------------
+
+Replicate an initial clone of domain, but do not join it.
+This is developed for debugging purposes, but not for setting up another DC.
+
+pdbedit
+-------
+
+Add '--set-nt-hash' option to pdbedit to update user password from nt-hash
+hexstring. 'pdbedit -vw' shows also password hashes.
+
+smbstatus
+---------
+
+'smbstatus' was enhanced to show the state of signing and encryption for
+sessions and shares.
+
+smbget
+------
+The -u and -p options for user and password were replaced by the -U option that
+accepts username[%password] as in many other tools of the Samba suite.
+Similary, smbgetrc files do not accept username and password options any more,
+only a single "user" option which also accepts user%password combinations.
+The -P option was removed.
+
+s4-rpc_server
+-------------
+
+Add a GnuTLS based backupkey implementation.
+
+ntlm_auth
+---------
+
+Using the '--offline-logon' enables ntlm_auth to use cached passwords when the
+DC is offline.
+
+Allow '--password' force a local password check for ntlm-server-1 mode.
+
+vfs_offline
+-----------
+
+A new VFS module called vfs_offline has been added to mark all files in the
+share as offline. It can be useful for shares mounted on top of a remote file
+system (either through a samba VFS module or via FUSE).
+
+KCC
+---
+
+The Samba KCC has been improved, but is still disabled by default.
+
+DNS
+---
+
+There were several improvements concerning the Samba DNS server.
+
+Active Directory
+----------------
+
+There were some improvements in the Active Directory area.
+
+WINS nsswitch module
+--------------------
+
+The WINS nsswitch module has been rewritten to address memory issues and to
+simplify the code. The module now uses libwbclient to do WINS queries. This
+means that winbind needs to be running in order to resolve WINS names using
+the nss_wins module. This does not affect smbd.
+
+CTDB changes
+------------
+
+* CTDB now uses a newly implemented parallel database recovery scheme
+  that avoids deadlocks with smbd.
+
+  In certain circumstances CTDB and smbd could deadlock.  The new
+  recovery implementation avoid this.  It also provides improved
+  recovery performance.
+
+* All files are now installed into and referred to by the paths
+  configured at build time.  Therefore, CTDB will now work properly
+  when installed into the default location at /usr/local.
+
+* Public CTDB header files are no longer installed, since Samba and
+  CTDB are built from within the same source tree.
+
+* CTDB_DBDIR can now be set to tmpfs[:<tmpfs-options>]
+
+  This will cause volatile TDBs to be located in a tmpfs.  This can
+  help to avoid performance problems associated with contention on the
+  disk where volatile TDBs are usually stored.  See ctdbd.conf(5) for
+  more details.
+
+* Configuration variable CTDB_NATGW_SLAVE_ONLY is no longer used.
+  Instead, nodes should be annotated with the "slave-only" option in
+  the CTDB NAT gateway nodes file.  This file must be consistent
+  across nodes in a NAT gateway group.  See ctdbd.conf(5) for more
+  details.
+
+* New event script 05.system allows various system resources to be
+  monitored
+
+  This can be helpful for explaining poor performance or unexpected
+  behaviour.  New configuration variables are
+  CTDB_MONITOR_FILESYSTEM_USAGE, CTDB_MONITOR_MEMORY_USAGE and
+  CTDB_MONITOR_SWAP_USAGE.  Default values cause warnings to be
+  logged.  See the SYSTEM RESOURCE MONITORING CONFIGURATION in
+  ctdbd.conf(5) for more information.
+
+  The memory, swap and filesystem usage monitoring previously found in
+  00.ctdb and 40.fs_use is no longer available.  Therefore,
+  configuration variables CTDB_CHECK_FS_USE, CTDB_MONITOR_FREE_MEMORY,
+  CTDB_MONITOR_FREE_MEMORY_WARN and CTDB_CHECK_SWAP_IS_NOT_USED are
+  now ignored.
+
+* The 62.cnfs eventscript has been removed.  To get a similar effect
+  just do something like this:
+
+      mmaddcallback ctdb-disable-on-quorumLoss \
+        --command /usr/bin/ctdb \
+        --event quorumLoss --parms "disable"
+
+      mmaddcallback ctdb-enable-on-quorumReached \
+        --command /usr/bin/ctdb \
+        --event quorumReached --parms "enable"
+
+* The CTDB tunable parameter EventScriptTimeoutCount has been renamed
+  to MonitorTimeoutCount
+
+  It has only ever been used to limit timed-out monitor events.
+
+  Configurations containing CTDB_SET_EventScriptTimeoutCount=<n> will
+  cause CTDB to fail at startup.  Useful messages will be logged.
+
+* The commandline option "-n all" to CTDB tool has been removed.
+
+  The option was not uniformly implemented for all the commands.
+  Instead of command "ctdb ip -n all", use "ctdb ip all".
+
+* All CTDB current manual pages are now correctly installed
+
+
+EXPERIMENTAL FEATURES
+=====================
+
+SMB3 Multi-Channel
+------------------
+
+Samba 4.4.0 adds *experimental* support for SMB3 Multi-Channel.
+Multi-Channel is an SMB3 protocol feature that allows the client
+to bind multiple transport connections into one authenticated
+SMB session. This allows for increased fault tolerance and
+throughput. The client chooses transport connections as reported
+by the server and also chooses over which of the bound transport
+connections to send traffic. I/O operations for a given file
+handle can span multiple network connections this way.
+An SMB multi-channel session will be valid as long as at least
+one of its channels are up.
+
+In Samba, multi-channel can be enabled by setting the new
+smb.conf option "server multi channel support" to "yes".
+It is disabled by default.
+
+Samba has to report interface speeds and some capabilities to
+the client. On Linux, Samba can auto-detect the speed of an
+interface. But to support other platforms, and in order to be
+able to manually override the detected values, the "interfaces"
+smb.conf option has been given an extended syntax, by which an
+interface specification can additionally carry speed and
+capability information. The extended syntax looks like this
+for setting the speed to 1 gigabit per second:
+
+    interfaces = 192.168.1.42;speed=1000000000
+
+This extension should be used with care and are mainly intended
+for testing. See the smb.conf manual page for details.
+
+CAVEAT: While this should be working without problems mostly,
+there are still corner cases in the treatment of channel failures
+that may result in DATA CORRUPTION when these race conditions hit.
+It is hence
+
+    NOT RECOMMENDED TO USE MULTI-CHANNEL IN PRODUCTION
+
+at this stage. This situation can be expected to improve during
+the life-time of the 4.4 release. Feed-back from test-setups is
+highly welcome.
+
+
+REMOVED FEATURES
+================
+
+Public headers
+--------------
+
+Several public headers are not installed any longer. They are made for internal
+use only. More public headers will very likely be removed in future releases.
+
+The following headers are not installed any longer:
+dlinklist.h, gen_ndr/epmapper.h, gen_ndr/mgmt.h, gen_ndr/ndr_atsvc_c.h,
+gen_ndr/ndr_epmapper_c.h, gen_ndr/ndr_epmapper.h, gen_ndr/ndr_mgmt_c.h,
+gen_ndr/ndr_mgmt.h,gensec.h, ldap_errors.h, ldap_message.h, ldap_ndr.h,
+ldap-util.h, pytalloc.h, read_smb.h, registry.h, roles.h, samba_util.h,
+smb2_constants.h, smb2_create_blob.h, smb2.h, smb2_lease.h, smb2_signing.h,
+smb_cli.h, smb_cliraw.h, smb_common.h, smb_composite.h, smb_constants.h,
+smb_raw.h, smb_raw_interfaces.h, smb_raw_signing.h, smb_raw_trans2.h,
+smb_request.h, smb_seal.h, smb_signing.h, smb_unix_ext.h, smb_util.h,
+torture.h, tstream_smbXcli_np.h.
+
+vfs_smb_traffic_analyzer
+------------------------
+
+The SMB traffic analyzer VFS module has been removed, because it is not
+maintained any longer and not widely used.
+
+vfs_scannedonly
+---------------
+
+The scannedonly VFS module has been removed, because it is not maintained
+any longer.
+
+smb.conf changes
+----------------
+
+  Parameter Name		Description		Default
+  --------------		-----------		-------
+  aio max threads               New                     100
+  ldap page size		Changed default		1000
+  server multi channel support	New			No
+  interfaces			Extended syntax
+
+
+KNOWN ISSUES
+============
+
+Currently none.
+
+
+CHANGES SINCE 4.4.0rc5
+======================
+
+o  Michael Adam <obnox@samba.org>
+   * BUG 11796: smbd: Enable multi-channel if 'server multi channel support =
+     yes' in the config.
+
+o  Günther Deschner <gd@samba.org>
+   * BUG 11802: lib/socket/interfaces: Fix some uninitialied bytes.
+
+o  Uri Simchoni <uri@samba.org>
+   * BUG 11798: build: Fix build when '--without-quota' specified.
+
+
+CHANGES SINCE 4.4.0rc4
+======================
+
+o  Andrew Bartlett <abartlet@samba.org>
+   * BUG 11780: mkdir can return ACCESS_DENIED incorrectly on create race.
+   * BUG 11783: Mismatch between local and remote attribute ids lets
+     replication fail with custom schema.
+   * BUG 11789: Talloc: Version 2.1.6.
+
+o  Ira Cooper <ira@samba.org>
+   * BUG 11774: vfs_glusterfs: Fix use after free in AIO callback.
+
+o  Günther Deschner <gd@samba.org>
+   * BUG 11755: Fix net join.
+
+o  Amitay Isaacs <amitay@gmail.com>
+   * BUG 11770: Reset TCP Connections during IP failover.
+
+o  Justin Maggard <jmaggard10@gmail.com>
+   * BUG 11773: s3:smbd: Add negprot remote arch detection for OSX.
+
+o  Stefan Metzmacher <metze@samba.org>
+   * BUG 11772: ldb: Version 1.1.26.
+   * BUG 11782: "trustdom_list_done: Got invalid trustdom response" message
+     should be avoided.
+
+o  Uri Simchoni <uri@samba.org>
+   * BUG 11769: libnet: Make Kerberos domain join site-aware.
+   * BUG 11788: Quota is not supported on Solaris 10.
+
+
+CHANGES SINCE 4.4.0rc3
+======================
+
+o  Jeremy Allison <jra@samba.org>
+   * BUG 11648: CVE-2015-7560: Getting and setting Windows ACLs on symlinks can
+     change permissions on link target.
+
+o  Christian Ambach <ambi@samba.org>
+   * BUG 11767: s3:utils/smbget: Fix option parsing.
+
+o  Alberto Maria Fiaschi <alberto.fiaschi@estar.toscana.it>
+   * BUG 8093: Access based share enum: handle permission set in configuration
+     files.
+
+o  Stefan Metzmacher <metze@samba.org>
+   * BUG 11702: s3:clispnego: Fix confusing warning in spnego_gen_krb5_wrap().
+   * BUG 11742: tevent: version 0.9.28: Fix memory leak when old signal action
+     restored.
+   * BUG 11755: s3:libads: setup the msDS-SupportedEncryptionTypes attribute on
+     ldap_add.
+   * BUGs 11128, 11686: CVE-2016-0771: Read of uninitialized memory DNS TXT
+     handling.
+
+o  Garming Sam <garming@catalyst.net.nz>
+   * BUGs 11128, 11686: CVE-2016-0771: Read of uninitialized memory DNS TXT
+     handling.
+
+o  Uri Simchoni <uri@samba.org>
+   * BUG 11691: winbindd: Return trust parameters when listing trusts.
+   * BUG 11753: smbd: Ignore SVHDX create context.
+   * BUG 11763: passdb: Add linefeed to debug message.
+
+
+CHANGES SINCE 4.4.0rc2
+======================
+
+o  Michael Adam <obnox@samba.org>
+   * BUG 11723: lib:socket: Fix CID 1350010: Integer OVERFLOW_BEFORE_WIDEN.
+   * BUG 11735: lib:socket: Fix CID 1350009: Fix illegal memory accesses
+     (BUFFER_SIZE_WARNING).
+
+o  Jeremy Allison <jra@samba.org>
+   * BUG 10489: s3: smbd: posix_acls: Fix check for setting u:g:o entry on a
+     filesystem with no ACL support.
+
+o  Christian Ambach <ambi@samba.org>
+   * BUG 11700: s3:utils/smbget: Set default blocksize.
+
+o  Anoop C S <anoopcs@redhat.com>
+   * BUG 11734: lib/socket: Fix improper use of default interface speed.
+
+o  Ralph Boehme <slow@samba.org>
+   * BUG 11714: lib/tsocket: Work around sockets not supporting FIONREAD.
+
+o  Volker Lendecke <vl@samba.org>
+   * BUG 11724: smbd: Fix CID 1351215 Improper use of negative value.
+   * BUG 11725: smbd: Fix CID 1351216 Dereference null return value.
+   * BUG 11732: param: Fix str_list_v3 to accept ; again.
+
+o  Noel Power <noel.power@suse.com>
+   * BUG 11738: libcli: Fix debug message, print sid string for new_ace trustee.
+
+o  Jose A. Rivera <jarrpa@samba.org>
+   * BUG 11727: s3:smbd:open: Skip redundant call to file_set_dosmode when
+     creating a new file.
+
+o  Andreas Schneider <asn@samba.org>
+   * BUG 11730: docs: Add manpage for cifsdd.
+   * BUG 11739: Fix installation path of Samba helper binaries.
+
+o  Berend De Schouwer <berend.de.schouwer@gmail.com>
+   * BUG 11643: docs: Add example for domain logins to smbspool man page.
+
+o  Martin Schwenke <martin@meltin.net>
+   * BUG 11719: ctdb-scripts: Drop use of "smbcontrol winbindd ip-dropped ..."
+
+o  Hemanth Thummala <hemanth.thummala@nutanix.com>
+   * BUG 11708: loadparm: Fix memory leak issue.
+   * BUG 11740: Fix memory leak in loadparm.
+
+
+CHANGES SINCE 4.4.0rc1
+======================
+
+o  Michael Adam <obnox@samba.org>
+   * BUG 11715: s3:vfs:glusterfs: Fix build after quota changes.
+
+o  Jeremy Allison <jra@samba.org>
+   * BUG 11703: s3: smbd: Fix timestamp rounding inside SMB2 create.
+
+o  Christian Ambach <ambi@samba.org>
+   * BUG 11700: Streamline 'smbget' options with the rest of the Samba utils.
+
+o  Günther Deschner <gd@samba.org>
+   * BUG 11696: ctdb: Do not provide a useless pkgconfig file for ctdb.
+
+o  Stefan Metzmacher <metze@samba.org>
+   * BUG 11699: Crypto.Cipher.ARC4 is not available on some platforms, fallback
+     to M2Crypto.RC4.RC4 then.
+
+o  Amitay Isaacs <amitay@gmail.com>
+   * BUG 11705: Sockets with htons(IPPROTO_RAW) and CVE-2015-8543.
+
+o  Andreas Schneider <asn@samba.org>
+   * BUG 11690: docs: Add smbspool_krb5_wrapper manpage.
+
+o  Uri Simchoni <uri@samba.org>
+   * BUG 11681: smbd: Show correct disk size for different quota and dfree block
+     sizes.
+
+
+#######################################
+Reporting bugs & Development Discussion
+#######################################
+
+Please discuss this release on the samba-technical mailing list or by
+joining the #samba-technical IRC channel on irc.freenode.net.
+
+If you do report problems then please try to send high quality
+feedback. If you don't provide vital information to help us track down
+the problem then you will probably be ignored.  All bug reports should
+be filed under the Samba 4.1 and newer product in the project's Bugzilla
+database (https://bugzilla.samba.org/).
+
+
+======================================================================
+== Our Code, Our Bugs, Our Responsibility.
+== The Samba Team
+======================================================================
+

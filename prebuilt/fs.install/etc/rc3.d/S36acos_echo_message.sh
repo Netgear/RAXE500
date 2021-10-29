@@ -1,0 +1,1 @@
+../init.d/S36acos_echo_message.sh

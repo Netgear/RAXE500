@@ -1,0 +1,24 @@
+ diff -urN  orig_quagga-1.2.4/lib/prefix.h  quagga-1.2.4/lib/prefix.h
+--- orig_quagga-1.2.4/lib/prefix.h	2018-02-25 16:48:06.425391420 +0800
++++ quagga-1.2.4/lib/prefix.h	2018-02-25 16:50:04.614618650 +0800
+@@ -44,7 +44,7 @@
+  */
+ struct ethaddr {
+     u_char octet[ETHER_ADDR_LEN];
+-} __packed;
++} __attribute__((packed));
+ 
+ 
+ /*
+ diff -urN  orig_quagga-1.2.4/lib/thread.c  quagga-1.2.4/lib/thread.c
+--- orig_quagga-1.2.4/lib/thread.c	2018-02-20 05:24:55.000000000 +0800
++++ quagga-1.2.4/lib/thread.c	2019-06-19 17:34:41.751627500 +0800
+@@ -606,7 +606,8 @@
+   thread->type = THREAD_UNUSED;
+   assert (thread->master != NULL && thread != NULL);
+   assert (thread->next == NULL);
+-  assert (thread->prev == NULL);
++  if(thread->prev != NULL )
++     thread->prev = NULL;
+   thread_list_add (&thread->master->unuse, thread);
+ }

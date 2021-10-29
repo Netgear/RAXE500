@@ -1,0 +1,12 @@
+prefix=
+exec_prefix=
+libdir=${pcfiledir}
+includedir=.
+
+Name: libavdevice
+Description: Libav device handling library
+Version: 53.2.0
+Requires: libavformat = 53.21.1
+Conflicts:
+Libs: ${libdir}/libavdevice.a -ldl -lm -pthread 
+Cflags: -I${includedir}

@@ -1,0 +1,11 @@
+beepVersion: 6.0
+eeName: OpenWrt
+eeVersion: 15.1
+pkgName: openwrtEE
+vendor: OpenWrt Project
+description: OpenWrt Execution Environment
+pkg-dependency:
+app-name: openwrt
+app-mediaType: ee_tarball
+app-tarballMngrExecutable: beepd
+app-directory: ./openwrtEEDir

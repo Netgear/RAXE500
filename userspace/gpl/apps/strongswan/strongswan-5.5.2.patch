@@ -1,0 +1,29 @@
+--- strongswan-5.5.1/src/starter/ipsec.conf	2018-01-30 16:20:50.543276820 -0800
++++ strongswan-5.5.1/src/starter/ipsec.conf	2018-01-30 16:18:26.990095870 -0800
+@@ -26,3 +26,4 @@
+ #      rightsubnet=10.2.0.0/16
+ #      rightid="C=CH, O=Linux strongSwan CN=peer name"
+ #      auto=start
++include /var/ipsec/ipsec.conf
+--- strongswan-5.5.1/src/starter/ipsec.secrets	2018-01-30 16:20:50.547276742 -0800
++++ strongswan-5.5.1/src/starter/ipsec.secrets	2018-01-30 16:18:28.558065089 -0800
+@@ -1 +1,2 @@
+ # ipsec.secrets - strongSwan IPsec secrets file
++include /var/ipsec/ipsec.secrets
+--- strongswan-5.5.1/conf/strongswan.conf	2018-01-30 16:20:50.527277134 -0800
++++ strongswan-5.5.1/conf/strongswan.conf	2018-01-30 16:18:32.813981539 -0800
+@@ -12,3 +12,4 @@
+ }
+ 
+ include strongswan.d/*.conf
++include /var/ipsec/strongswan.conf
+--- strongswan-5.5.2/src/libstrongswan/utils/utils/memory.h	2016-04-22 13:01:35.000000000 -0700
++++ strongswan-5.5.2/src/libstrongswan/utils/utils/memory_new.h	2018-03-06 13:41:17.847298198 -0800
+@@ -22,6 +22,7 @@
+ #ifndef MEMORY_H_
+ #define MEMORY_H_
+ 
++#include <stdint.h>
+ /**
+  * Helper function that compares two binary blobs for equality
+  */

@@ -1,0 +1,4 @@
+profile disallow-fcctl flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/lxc/container-base>
+  deny /bin/fcctl x,
+}

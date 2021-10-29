@@ -1,0 +1,51 @@
+diff -rupN orig_busybox-1.31.1/Makefile busybox-1.31.1/Makefile
+--- orig_busybox-1.31.1/Makefile	2019-10-25 16:44:52.000000000 +0800
++++ busybox-1.31.1/Makefile	2019-10-28 11:00:38.395931389 +0800
+@@ -294,7 +294,13 @@ LD		= $(CC) -nostdlib
+ CPP		= $(CC) -E
+ AR		= $(CROSS_COMPILE)ar
+ NM		= $(CROSS_COMPILE)nm
++# brcm begin
++ifneq ($(strip $(DESKTOP_LINUX)),)
++STRIP		= strip
++else
+ STRIP		= $(CROSS_COMPILE)strip
++endif
++# brcm end
+ OBJCOPY		= $(CROSS_COMPILE)objcopy
+ OBJDUMP		= $(CROSS_COMPILE)objdump
+ PKG_CONFIG	?= $(CROSS_COMPILE)pkg-config
+diff -rupN orig_busybox-1.31.1/Makefile.flags busybox-1.31.1/Makefile.flags
+--- orig_busybox-1.31.1/Makefile.flags	2019-06-10 18:50:53.000000000 +0800
++++ busybox-1.31.1/Makefile.flags	2019-10-28 11:00:38.395931389 +0800
+@@ -81,6 +81,14 @@ CFLAGS += $(call cc-option,-fsanitize=le
+ CFLAGS += $(call cc-option,-fsanitize=undefined,)
+ endif
+ 
++# brcm begin
++ifneq ($(strip $(DESKTOP_LINUX)),)
++CFLAGS += -DDESKTOP_LINUX $(BCM_LD_FLAGS)
++LDFLAGS += $(BCM_LD_FLAGS)
++endif
++# brcm end
++
++
+ # If arch/$(ARCH)/Makefile did not override it (with, say, -fPIC)...
+ ARCH_FPIC ?= -fpic
+ ARCH_FPIE ?= -fpie
+diff -rupN orig_busybox-1.31.1/coreutils/date.c_orig  busybox-1.31.1/coreutils/date.c
+--- orig_busybox-1.31.1/coreutils/date.c_orig	2020-09-08 10:09:29.232774503 +0800
++++ busybox-1.31.1/coreutils/date.c	2020-09-08 10:10:15.905356055 +0800
+@@ -302,10 +302,12 @@ int date_main(int argc UNUSED_PARAM, cha
+ 			tm_time.tm_isdst = -1;
+ 		ts.tv_sec = validate_tm_time(date_str, &tm_time);
+ 
++#ifndef DESKTOP_LINUX
+ 		/* if setting time, set it */
+ 		if ((opt & OPT_SET) && stime(&ts.tv_sec) < 0) {
+ 			bb_perror_msg("can't set date");
+ 		}
++#endif
+ 	}
+ 
+ 	/* Display output */

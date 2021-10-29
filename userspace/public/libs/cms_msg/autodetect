@@ -1,0 +1,3 @@
+dependson: public/libs/bcm_util
+# on 64bit systems, uncomment following line to build both 64bit and 32bit
+# kernel-aarch64: aarch64 arm

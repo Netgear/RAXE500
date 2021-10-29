@@ -1,0 +1,1057 @@
+--- iperf-3.8.1_orig/src/iperf_api.c	2020-06-10 23:18:27.000000000 +0800
++++ iperf-3.8.1/src/iperf_api.c	2020-08-12 16:12:13.636766299 +0800
+@@ -91,6 +91,9 @@
+ #include "iperf_auth.h"
+ #endif /* HAVE_SSL */
+ 
++#ifdef CONFIG_BCM_SPDTEST
++#include "spdt_api.h"
++#endif
+ /* Forwards. */
+ static int send_parameters(struct iperf_test *test);
+ static int get_parameters(struct iperf_test *test);
+@@ -681,7 +684,25 @@ set_protocol(struct iperf_test *test, in
+ void
+ iperf_on_new_stream(struct iperf_stream *sp)
+ {
+-    connect_msg(sp);
++#ifdef CONFIG_BCM_SPDTEST
++    if (sp->test->hwoffl)
++    {
++        /* Save connetion addresses in stream context */
++        int rc;
++        spdt_conn_params_t conn_addr;
++
++        rc = spdt_get_conn_params(sp->socket, &conn_addr);
++        if (rc)
++        {
++            printf("HWOFFL:Failed to retrive connection addresses rc=%d\n", rc);
++        }
++
++        memcpy(&sp->remote_addr, &conn_addr.server_addr, sizeof(struct sockaddr_storage));
++        memcpy(&sp->local_addr, &conn_addr.local_addr, sizeof(struct sockaddr_storage));
++    }
++#endif 
++
++    connect_msg(sp);   
+ }
+ 
+ void
+@@ -790,12 +811,73 @@ iperf_on_connect(struct iperf_test *test
+     }
+ }
+ 
++#ifdef CONFIG_BCM_SPDTEST
++void iperf_hw_disconnect_sock(struct iperf_test *test, int sock)
++{
++    if (test->mode == SENDER)
++        spdt_send_stop(sock);
++    else
++        spdt_recv_stop(sock);
++    spdt_disconnect(sock);
++}
++
++void iperf_hw_uninit(struct iperf_test *test)
++{
++    struct iperf_stream *sp;
++
++    SLIST_FOREACH(sp, &test->streams, streams) 
++    {
++        iperf_hw_disconnect_sock(test, sp->socket);
++        spdt_uninit(sp->socket);
++    } 
++}
++#endif
++
+ void
+ iperf_on_test_finish(struct iperf_test *test)
+ {
++#ifdef CONFIG_BCM_SPDTEST
++    if (test->hwoffl)
++        iperf_hw_uninit(test);
++#endif
+ }
+ 
++#ifdef CONFIG_BCM_SPDTEST
++int
++iperf_set_hw_offload(struct iperf_test *test)
++{
++    struct protocol *tcp, *udp;
++
++    test->hwoffl = 1;
+ 
++    /*replace the tcp callbacks */
++    tcp = get_protocol(test, Ptcp);
++    if (!tcp)
++    {
++        printf("Failed to update TCP to HW offload");
++        return -1;
++    }
++
++    tcp->connect = iperf_tcp_hwoffl_connect;
++    tcp->recv = iperf_tcp_hwoffl_recv;
++    tcp->send = iperf_tcp_hwoffl_send;
++
++    udp = get_protocol(test, Pudp);
++    if (!udp)
++    {
++        printf("Failed to update UDP to HW offload");
++        return -1;
++    }
++
++    udp->connect = iperf_udp_hwoffl_connect;
++    udp->recv = iperf_udp_hwoffl_recv;
++    udp->send = iperf_udp_hwoffl_send;
++
++    printf("BROADCOM iPerf3 Hardware Offload Enabled\n");
++
++    return 0;
++}
++#endif
+ /******************************************************************************/
+ 
+ int
+@@ -803,6 +885,9 @@ iperf_parse_arguments(struct iperf_test
+ {
+     static struct option longopts[] =
+     {
++#ifdef CONFIG_BCM_SPDTEST
++        {"hwoffl", no_argument, NULL, 'H'},
++#endif        
+         {"port", required_argument, NULL, 'p'},
+         {"format", required_argument, NULL, 'f'},
+         {"interval", required_argument, NULL, 'i'},
+@@ -890,8 +975,16 @@ iperf_parse_arguments(struct iperf_test
+     char *client_username = NULL, *client_rsa_public_key = NULL, *server_rsa_private_key = NULL;
+ #endif /* HAVE_SSL */
+ 
++#ifdef CONFIG_BCM_SPDTEST
++    while ((flag = getopt_long(argc, argv, "p:f:i:HD1VJvsc:ub:t:n:k:l:P:Rw:B:M:N46S:L:ZO:F:A:T:C:dI:hX:", longopts, NULL)) != -1) {
++        switch (flag) {
++            case 'H':
++                iperf_set_hw_offload(test);
++                break;
++#else  
+     while ((flag = getopt_long(argc, argv, "p:f:i:D1VJvsc:ub:t:n:k:l:P:Rw:B:M:N46S:L:ZO:F:A:T:C:dI:hX:", longopts, NULL)) != -1) {
+         switch (flag) {
++#endif
+             case 'p':
+ 		portno = atoi(optarg);
+ 		if (portno < 1 || portno > 65535) {
+@@ -1326,12 +1419,25 @@ iperf_parse_arguments(struct iperf_test
+ #endif //HAVE_SSL
+     if (blksize == 0) {
+ 	if (test->protocol->id == Pudp)
++    {
++#ifdef CONFIG_BCM_SPDTEST
++    if (test->hwoffl)
++	    blksize = DEFAULT_HW_UDP_BLKSIZE;
++    else
++#endif
+ 	    blksize = 0;	/* try to dynamically determine from MSS */
++    }
+ 	else if (test->protocol->id == Psctp)
+ 	    blksize = DEFAULT_SCTP_BLKSIZE;
+ 	else
+ 	    blksize = DEFAULT_TCP_BLKSIZE;
+     }
++#ifdef CONFIG_BCM_SPDTEST
++    if (test->hwoffl && test->protocol->id == Pudp && blksize < MIN_HW_UDP_BLKSIZE) {
++        i_errno = IEBLOCKSIZE;
++        return -1;
++    }
++#endif
+     if ((test->protocol->id != Pudp && blksize <= 0) 
+ 	|| blksize > MAX_BLOCKSIZE) {
+ 	i_errno = IEBLOCKSIZE;
+@@ -1348,6 +1454,17 @@ iperf_parse_arguments(struct iperf_test
+     if (!rate_flag)
+ 	test->settings->rate = test->protocol->id == Pudp ? UDP_RATE : 0;
+ 
++#ifdef CONFIG_BCM_SPDTEST
++    if (test->hwoffl)
++    {
++        if (test->protocol->id == Pudp && !test->settings->rate)
++        {
++            /* Set default rate */
++            test->settings->rate = UDP_HW_RATE; 
++        }
++    }
++#endif
++
+     if ((test->settings->bytes != 0 || test->settings->blocks != 0) && ! duration_flag)
+         test->duration = 0;
+ 
+@@ -2243,7 +2360,11 @@ connect_msg(struct iperf_stream *sp)
+     char ipl[INET6_ADDRSTRLEN], ipr[INET6_ADDRSTRLEN];
+     int lport, rport;
+ 
++#ifdef CONFIG_BCM_SPDTEST
++    if (sp->remote_addr.ss_family == AF_INET) {            
++#else    
+     if (getsockdomain(sp->socket) == AF_INET) {
++#endif
+         inet_ntop(AF_INET, (void *) &((struct sockaddr_in *) &sp->local_addr)->sin_addr, ipl, sizeof(ipl));
+ 	mapped_v4_to_regular_v4(ipl);
+         inet_ntop(AF_INET, (void *) &((struct sockaddr_in *) &sp->remote_addr)->sin_addr, ipr, sizeof(ipr));
+@@ -2716,6 +2837,45 @@ iperf_stats_callback(struct iperf_test *
+     temp.omitted = test->omitting;
+     SLIST_FOREACH(sp, &test->streams, streams) {
+         rp = sp->result;
++#ifdef CONFIG_BCM_SPDTEST
++        if (test->hwoffl) {
++            /* In case of HW offload, need to fetch counters per stream */
++            spdt_stat_t spd_stat = {};
++
++            spdt_stats_get(sp->socket, &spd_stat);
++            if (test->protocol->id == Ptcp)
++            {
++                tcp_spdt_rep_t *spd_report;
++                spd_report = &(spd_stat.proto_ext.tcp_speed_rep);
++
++                if (test->mode == SENDER) {
++                    rp->bytes_sent_this_interval = (iperf_size_t)spd_report->num_bytes - rp->bytes_sent;
++                    rp->bytes_sent = (iperf_size_t)spd_report->num_bytes;
++                } else {
++                    rp->bytes_received_this_interval = (iperf_size_t)spd_report->num_bytes - rp->bytes_received;
++                    rp->bytes_received = (iperf_size_t)spd_report->num_bytes;
++                }
++            }
++            else if (test->protocol->id == Pudp)
++            {
++                udp_spdt_iperf3_stat_t *spd_report;
++                spd_report = &(spd_stat.proto_ext.udp_iperf3);
++
++                if (test->mode == SENDER) {
++                    rp->bytes_sent_this_interval = (iperf_size_t)(spd_report->tx.bytes);
++                    rp->bytes_sent += rp->bytes_sent_this_interval;
++                    sp->packet_count += (int)(spd_report->tx.packets);
++                } else {
++                    rp->bytes_received_this_interval = (iperf_size_t)(spd_report->rx.bytes);
++                    rp->bytes_received += rp->bytes_received_this_interval;
++                    sp->packet_count += (int)(spd_report->rx.packets);
++                }
++                sp->cnt_error += (int)(spd_report->error_cnt_pkts); 
++                sp->outoforder_packets += (int)(spd_report->out_of_order_pkts);
++                sp->jitter = (double)(spd_report->jitter);
++            }
++        }
++#endif
+ 	temp.bytes_transferred = sp->sender ? rp->bytes_sent_this_interval : rp->bytes_received_this_interval;
+      
+ 	irp = TAILQ_LAST(&rp->interval_results, irlisthead);
+@@ -2729,50 +2889,57 @@ iperf_stats_callback(struct iperf_test *
+         memcpy(&temp.interval_end_time, &rp->end_time, sizeof(struct iperf_time));
+         iperf_time_diff(&temp.interval_start_time, &temp.interval_end_time, &temp_time);
+         temp.interval_duration = iperf_time_in_secs(&temp_time);
+-	if (test->protocol->id == Ptcp) {
+-	    if ( has_tcpinfo()) {
+-		save_tcpinfo(sp, &temp);
+-		if (test->sender_has_retransmits == 1) {
+-		    long total_retrans = get_total_retransmits(&temp);
+-		    temp.interval_retrans = total_retrans - rp->stream_prev_total_retrans;
+-		    rp->stream_retrans += temp.interval_retrans;
+-		    rp->stream_prev_total_retrans = total_retrans;
+-
+-		    temp.snd_cwnd = get_snd_cwnd(&temp);
+-		    if (temp.snd_cwnd > rp->stream_max_snd_cwnd) {
+-			rp->stream_max_snd_cwnd = temp.snd_cwnd;
+-		    }
+-		    
+-		    temp.rtt = get_rtt(&temp);
+-		    if (temp.rtt > rp->stream_max_rtt) {
+-			rp->stream_max_rtt = temp.rtt;
+-		    }
+-		    if (rp->stream_min_rtt == 0 ||
+-			temp.rtt < rp->stream_min_rtt) {
+-			rp->stream_min_rtt = temp.rtt;
+-		    }
+-		    rp->stream_sum_rtt += temp.rtt;
+-		    rp->stream_count_rtt++;
+ 
+-		    temp.rttvar = get_rttvar(&temp);
+-		    temp.pmtu = get_pmtu(&temp);
+-		}
+-	    }
+-	} else {
+-	    if (irp == NULL) {
+-		temp.interval_packet_count = sp->packet_count;
+-		temp.interval_outoforder_packets = sp->outoforder_packets;
+-		temp.interval_cnt_error = sp->cnt_error;
+-	    } else {
+-		temp.interval_packet_count = sp->packet_count - irp->packet_count;
+-		temp.interval_outoforder_packets = sp->outoforder_packets - irp->outoforder_packets;
+-		temp.interval_cnt_error = sp->cnt_error - irp->cnt_error;
+-	    }
+-	    temp.packet_count = sp->packet_count;
+-	    temp.jitter = sp->jitter;
+-	    temp.outoforder_packets = sp->outoforder_packets;
+-	    temp.cnt_error = sp->cnt_error;
+-	}
++        if (
++#ifdef CONFIG_BCM_SPDTEST
++            !test->hwoffl &&
++#endif
++            test->protocol->id == Ptcp ) {
++            if ( has_tcpinfo()) {
++                save_tcpinfo(sp, &temp);
++                if (test->mode == SENDER && test->sender_has_retransmits) {
++                    long total_retrans = get_total_retransmits(&temp);
++                    temp.interval_retrans = total_retrans - rp->stream_prev_total_retrans;
++                    rp->stream_retrans += temp.interval_retrans;
++                    rp->stream_prev_total_retrans = total_retrans;
++
++                    temp.snd_cwnd = get_snd_cwnd(&temp);
++                    if (temp.snd_cwnd > rp->stream_max_snd_cwnd) {
++                        rp->stream_max_snd_cwnd = temp.snd_cwnd;
++                    }
++
++                    temp.rtt = get_rtt(&temp);
++                    if (temp.rtt > rp->stream_max_rtt) {
++                        rp->stream_max_rtt = temp.rtt;
++                    }
++                    if (rp->stream_min_rtt == 0 ||
++                        temp.rtt < rp->stream_min_rtt) {
++                        rp->stream_min_rtt = temp.rtt;
++                    }
++                    rp->stream_sum_rtt += temp.rtt;
++                    rp->stream_count_rtt++;
++                }
++            }
++        } else {
++            if (test->protocol->id == Ptcp && has_tcpinfo())
++            {
++                temp.snd_cwnd = 0;
++                temp.interval_retrans = 0;
++            }
++            if (irp == NULL) {
++                temp.interval_packet_count = sp->packet_count;
++                temp.interval_outoforder_packets = sp->outoforder_packets;
++                temp.interval_cnt_error = sp->cnt_error;
++            } else {
++                temp.interval_packet_count = sp->packet_count - irp->packet_count;
++                temp.interval_outoforder_packets = sp->outoforder_packets - irp->outoforder_packets;
++                temp.interval_cnt_error = sp->cnt_error - irp->cnt_error;
++            }
++            temp.packet_count = sp->packet_count;
++            temp.jitter = sp->jitter;
++            temp.outoforder_packets = sp->outoforder_packets;
++            temp.cnt_error = sp->cnt_error;
++        } 
+         add_to_interval_list(rp, &temp);
+         rp->bytes_sent_this_interval = rp->bytes_received_this_interval = 0;
+     }
+@@ -3737,6 +3904,10 @@ iperf_new_stream(struct iperf_test *test
+     } else
+         sp->diskfile_fd = -1;
+ 
++#ifdef CONFIG_BCM_SPDTEST
++    if (!test->hwoffl)
++    {
++#endif
+     /* Initialize stream */
+     if (test->repeating_payload)
+         fill_with_repeating_pattern(sp->buffer, test->settings->blksize);
+@@ -3750,6 +3921,9 @@ iperf_new_stream(struct iperf_test *test
+         free(sp);
+         return NULL;
+     }
++#ifdef CONFIG_BCM_SPDTEST
++    }    
++#endif    
+     iperf_add_stream(test, sp);
+ 
+     return sp;
+@@ -3912,6 +4086,7 @@ iperf_got_sigend(struct iperf_test *test
+      * If we're the client, or if we're a server and running a test,
+      * then dump out the accumulated stats so far.
+      */
++
+     if (test->role == 'c' ||
+       (test->role == 's' && test->state == TEST_RUNNING)) {
+ 
+@@ -3919,6 +4094,7 @@ iperf_got_sigend(struct iperf_test *test
+ 	cpu_util(test->cpu_util);
+ 	test->stats_callback(test);
+ 	test->state = DISPLAY_RESULTS; /* change local state only */
++
+ 	if (test->on_test_finish)
+ 	    test->on_test_finish(test);
+ 	test->reporter_callback(test);
+diff -rupN iperf-3.8.1_orig/src/iperf_api.h iperf-3.8.1/src/iperf_api.h
+--- iperf-3.8.1_orig/src/iperf_api.h	2020-06-10 23:18:27.000000000 +0800
++++ iperf-3.8.1/src/iperf_api.h	2020-08-12 13:58:38.251212437 +0800
+@@ -50,6 +50,10 @@ struct iperf_time;
+ #define Pudp SOCK_DGRAM
+ #define Psctp 12
+ #define DEFAULT_UDP_BLKSIZE 1460 /* default is dynamically set, else this */
++#ifdef CONFIG_BCM_SPDTEST
++#define DEFAULT_HW_UDP_BLKSIZE 1450
++#define MIN_HW_UDP_BLKSIZE 32
++#endif
+ #define DEFAULT_TCP_BLKSIZE (128 * 1024)  /* default read/write block size */
+ #define DEFAULT_SCTP_BLKSIZE (64 * 1024)
+ 
+@@ -413,4 +417,9 @@ enum {
+ #endif
+ 
+ 
++#ifdef CONFIG_BCM_SPDTEST
++void iperf_hw_disconnect_sock(struct iperf_test *test, int sock);
++void iperf_hw_uninit(struct iperf_test *test);
++#endif
++
+ #endif /* !__IPERF_API_H */
+diff -rupN iperf-3.8.1_orig/src/iperf_client_api.c iperf-3.8.1/src/iperf_client_api.c
+--- iperf-3.8.1_orig/src/iperf_client_api.c	2020-06-10 23:18:27.000000000 +0800
++++ iperf-3.8.1/src/iperf_client_api.c	2020-08-12 13:58:38.251212437 +0800
+@@ -69,6 +69,10 @@ iperf_create_streams(struct iperf_test *
+         if ((s = test->protocol->connect(test)) < 0)
+             return -1;
+ 
++#ifdef CONFIG_BCM_SPDTEST
++        if (test->hwoffl)
++            goto hwoffl_bypass;
++#endif
+ #if defined(HAVE_TCP_CONGESTION)
+ 	if (test->protocol->id == Ptcp) {
+ 	    if (test->congestion) {
+@@ -97,13 +101,19 @@ iperf_create_streams(struct iperf_test *
+ 	    }
+ 	}
+ #endif /* HAVE_TCP_CONGESTION */
+-
++#ifdef CONFIG_BCM_SPDTEST
++    if (!test->hwoffl) {
++#endif   
+ 	if (sender)
+ 	    FD_SET(s, &test->write_set);
+ 	else
+ 	    FD_SET(s, &test->read_set);
+ 	if (s > test->max_fd) test->max_fd = s;
+ 
++#ifdef CONFIG_BCM_SPDTEST
++    }
++hwoffl_bypass:
++#endif
+         sp = iperf_new_stream(test, s, sender);
+         if (!sp)
+             return -1;
+@@ -423,13 +433,14 @@ iperf_connect(struct iperf_test *test)
+ int
+ iperf_client_end(struct iperf_test *test)
+ {
++#ifndef CONFIG_BCM_SPDTEST    
+     struct iperf_stream *sp;
+ 
+     /* Close all stream sockets */
+     SLIST_FOREACH(sp, &test->streams, streams) {
+         close(sp->socket);
+     }
+-
++#endif
+     /* show final summary */
+     test->reporter_callback(test);
+ 
+@@ -453,6 +464,7 @@ iperf_run_client(struct iperf_test * tes
+     struct iperf_time now;
+     struct timeval* timeout = NULL;
+     struct iperf_stream *sp;
++    int rc = -1;
+ 
+     if (test->logfile)
+         if (iperf_open_logfile(test) < 0)
+@@ -460,11 +472,11 @@ iperf_run_client(struct iperf_test * tes
+ 
+     if (test->affinity != -1)
+ 	if (iperf_setaffinity(test, test->affinity) != 0)
+-	    return -1;
++            goto exit;
+ 
+     if (test->json_output)
+ 	if (iperf_json_start(test) < 0)
+-	    return -1;
++            goto exit;
+ 
+     if (test->json_output) {
+ 	cJSON_AddItemToObject(test->json_start, "version", cJSON_CreateString(version));
+@@ -478,7 +490,7 @@ iperf_run_client(struct iperf_test * tes
+ 
+     /* Start the client and connect to the server */
+     if (iperf_connect(test) < 0)
+-        return -1;
++        goto exit;
+ 
+     /* Begin calculating CPU utilization */
+     cpu_util(NULL);
+@@ -492,12 +504,12 @@ iperf_run_client(struct iperf_test * tes
+ 	result = select(test->max_fd + 1, &read_set, &write_set, NULL, timeout);
+ 	if (result < 0 && errno != EINTR) {
+   	    i_errno = IESELECT;
+-	    return -1;
++            goto exit;
+ 	}
+ 	if (result > 0) {
+ 	    if (FD_ISSET(test->ctrl_sck, &read_set)) {
+  	        if (iperf_handle_message_client(test) < 0) {
+-		    return -1;
++                    goto exit;
+ 		}
+ 		FD_CLR(test->ctrl_sck, &read_set);
+ 	    }
+@@ -521,17 +533,17 @@ iperf_run_client(struct iperf_test * tes
+ 	    if (test->mode == BIDIRECTIONAL)
+ 	    {
+                 if (iperf_send(test, &write_set) < 0)
+-                    return -1;
++		    goto exit;
+                 if (iperf_recv(test, &read_set) < 0)
+-                    return -1;
++		    goto exit;
+ 	    } else if (test->mode == SENDER) {
+                 // Regular mode. Client sends.
+                 if (iperf_send(test, &write_set) < 0)
+-                    return -1;
++		    goto exit;
+ 	    } else {
+                 // Reverse mode. Client receives.
+                 if (iperf_recv(test, &read_set) < 0)
+-                    return -1;
++		    goto exit;
+ 	    }
+ 
+ 
+@@ -556,9 +568,22 @@ iperf_run_client(struct iperf_test * tes
+ 		test->done = 1;
+ 		cpu_util(test->cpu_util);
+ 		test->stats_callback(test);
+-		if (iperf_set_send_state(test, TEST_END) != 0)
+-		    return -1;
+-	    }
++#ifdef CONFIG_BCM_SPDTEST
++                if (test->protocol->id == Pudp && test->hwoffl)
++                {
++                    struct iperf_stream *sp;
++
++                    /* WAR: It's possible that the stream will cause the termination packet to be lost.
++                     * Hence, first stop the stream and then send the TEST_END */
++                    SLIST_FOREACH(sp, &test->streams, streams) 
++                    {
++                        spdt_send_stop(sp->socket);
++                    } 
++                }
++#endif
++                if (iperf_set_send_state(test, TEST_END) != 0)
++                    goto exit;
++            }
+ 	}
+ 	// If we're in reverse mode, continue draining the data
+ 	// connection(s) even if test is over.  This prevents a
+@@ -567,19 +592,26 @@ iperf_run_client(struct iperf_test * tes
+ 	// from the client side.
+ 	else if (test->mode == RECEIVER && test->state == TEST_END) {
+ 	    if (iperf_recv(test, &read_set) < 0)
+-		return -1;
++                goto exit;
+ 	}
+     }
+ 
+     if (test->json_output) {
+ 	if (iperf_json_finish(test) < 0)
+-	    return -1;
++            goto exit;
+     } else {
+ 	iperf_printf(test, "\n");
+ 	iperf_printf(test, "%s", report_done);
+     }
+ 
+     iflush(test);
++    rc = 0;
++ 
++exit:
++#ifdef CONFIG_BCM_SPDTEST
++    if (rc && test->hwoffl)
++        iperf_hw_uninit(test);
++#endif
+ 
+-    return 0;
++    return rc;
+ }
+diff -rupN iperf-3.8.1_orig/src/iperf_error.c iperf-3.8.1/src/iperf_error.c
+--- iperf-3.8.1_orig/src/iperf_error.c	2020-06-10 23:18:27.000000000 +0800
++++ iperf-3.8.1/src/iperf_error.c	2020-08-12 13:58:38.251212437 +0800
+@@ -116,7 +116,12 @@ iperf_strerror(int int_errno)
+             snprintf(errstr, len, "number of parallel streams too large (maximum = %d)", MAX_STREAMS);
+             break;
+         case IEBLOCKSIZE:
++#ifdef CONFIG_BCM_SPDTEST
++            snprintf(errstr, len, "bad block size (maximum = %d bytes, minimum for UDP with HW offload = %d bytes)",
++                MAX_BLOCKSIZE, MIN_HW_UDP_BLKSIZE);
++#else
+             snprintf(errstr, len, "block size too large (maximum = %d bytes)", MAX_BLOCKSIZE);
++#endif
+             break;
+         case IEBUFSIZE:
+             snprintf(errstr, len, "socket buffer size too large (maximum = %d bytes)", MAX_TCP_BUFFER);
+diff -rupN iperf-3.8.1_orig/src/iperf.h iperf-3.8.1/src/iperf.h
+--- iperf-3.8.1_orig/src/iperf.h	2020-06-10 23:18:27.000000000 +0800
++++ iperf-3.8.1/src/iperf.h	2020-08-12 13:58:38.251212437 +0800
+@@ -243,6 +243,9 @@ enum iperf_mode {
+ 
+ struct iperf_test
+ {
++#ifdef CONFIG_BCM_SPDTEST
++    int       hwoffl;                            /* 'H' stands for HW offload */
++#endif    
+     char      role;                             /* 'c' lient or 's' erver */
+     enum iperf_mode mode;
+     int       sender_has_retransmits;
+@@ -362,6 +365,9 @@ struct iperf_test
+ #define uS_TO_NS 1000
+ #define SEC_TO_US 1000000LL
+ #define UDP_RATE (1024 * 1024) /* 1 Mbps */
++#ifdef CONFIG_BCM_SPDTEST
++#define UDP_HW_RATE (UDP_RATE * 1024) /* 1 Gbps */
++#endif
+ #define OMIT 0 /* seconds */
+ #define DURATION 10 /* seconds */
+ 
+diff -rupN iperf-3.8.1_orig/src/iperf_locale.c iperf-3.8.1/src/iperf_locale.c
+--- iperf-3.8.1_orig/src/iperf_locale.c	2020-06-10 23:18:27.000000000 +0800
++++ iperf-3.8.1/src/iperf_locale.c	2020-08-12 13:58:38.251212437 +0800
+@@ -124,6 +124,9 @@ const char usage_longstr[] = "Usage: ipe
+                            "                            credentials\n"
+ #endif //HAVE_SSL
+                            "Client specific:\n"
++#ifdef CONFIG_BCM_SPDTEST                           
++                           "  -H, --hwoffl              run client in HW offload mode\n"
++#endif
+                            "  -c, --client    <host>    run in client mode, connecting to <host>\n"
+ #if defined(HAVE_SCTP)
+                            "  --sctp                    use SCTP rather than TCP\n"
+diff -rupN iperf-3.8.1_orig/src/iperf_tcp.c iperf-3.8.1/src/iperf_tcp.c
+--- iperf-3.8.1_orig/src/iperf_tcp.c	2020-06-10 23:18:27.000000000 +0800
++++ iperf-3.8.1/src/iperf_tcp.c	2020-08-12 13:58:38.251212437 +0800
+@@ -48,6 +48,9 @@
+ #include "flowlabel.h"
+ #endif /* HAVE_FLOWLABEL */
+ 
++#ifdef CONFIG_BCM_SPDTEST
++#include "spdt_api.h"
++#endif
+ /* iperf_tcp_recv
+  *
+  * receives the data for TCP
+@@ -355,6 +358,133 @@ iperf_tcp_listen(struct iperf_test *test
+ }
+ 
+ 
++#ifdef CONFIG_BCM_SPDTEST
++int 
++iperf_tcp_hwoffl_recv(struct iperf_stream *sp)
++{
++    return 0;
++}
++
++int
++iperf_tcp_hwoffl_send(struct iperf_stream *sp)
++{
++    return 0;
++}
++
++int
++iperf_tcp_hwoffl_connect(struct iperf_test *test)
++{
++    uint8_t hw_fd;
++    spdt_conn_params_t params = {};
++    struct addrinfo hints, *local_res, *server_res;
++    char portstr[6];
++    int rc, connected = 0;
++
++    memset(&hints, 0, sizeof(hints));
++
++    rc = spdt_init(SPDT_IPERF3_TCP, &hw_fd);
++    if (rc)
++    {
++        printf("spdt_init failed\n");
++        i_errno = IESTREAMCONNECT;
++        return -1;  
++    }
++
++    memset(&params.local_addr, 0, sizeof(params.local_addr));
++
++    if (test->bind_address) 
++    {
++        memset(&hints, 0, sizeof(hints));
++        hints.ai_family = test->settings->domain;
++        hints.ai_socktype = SOCK_STREAM;
++        if (getaddrinfo(test->bind_address, NULL, &hints, &local_res) != 0) {
++            i_errno = IESTREAMCONNECT;
++            goto error;
++        }
++        /* convert to sockaddr_storage */
++
++        memcpy(&params.local_addr, local_res->ai_addr, local_res->ai_addrlen);
++
++        /*may free addrinfo now */
++        freeaddrinfo(local_res);
++    }
++
++    /* get server's address */
++    memset(&hints, 0, sizeof(hints));
++    hints.ai_family = test->settings->domain;
++    hints.ai_socktype = SOCK_STREAM;
++    snprintf(portstr, sizeof(portstr), "%d", test->server_port);
++    if (getaddrinfo(test->server_hostname, portstr, &hints, &server_res) != 0) {
++        spdt_uninit(hw_fd);
++        i_errno = IESTREAMCONNECT;
++        goto error;
++    }
++
++     /* convert to sockaddr_storage */
++    memset(&params.server_addr, 0, sizeof(params.server_addr));
++    memcpy(&params.server_addr, server_res->ai_addr, server_res->ai_addrlen);
++
++    /*may free addrinfo now */
++    freeaddrinfo(server_res);
++
++    if (test->settings->tos)
++       params.tos = test->settings->tos;
++
++    /* try to connect */
++    rc = spdt_connect(hw_fd, test->mode == SENDER ? SPDT_DIR_TX : SPDT_DIR_RX, &params);
++    if (rc)
++    {
++        printf("spdt_connect failed\n");
++        spdt_uninit(hw_fd);
++        i_errno = IESTREAMCONNECT;
++        goto error;
++    }
++    connected = 1;
++
++    if (!test->mode == SENDER)
++    {
++        spdt_rx_params_t rx_params = {};
++
++        rc = spdt_recv_start(hw_fd, &rx_params);
++        if (rc)
++        {
++            printf("spdt_recv_start failed\n");
++            i_errno = IESTREAMCONNECT;
++            goto error;
++        }    
++    }
++
++    /*send cookie via OOB channel */
++    rc = spdt_oob_send(hw_fd, test->cookie, COOKIE_SIZE);
++    if (rc)
++    {
++        printf("spdt_oob_send failed\n");
++        i_errno = IESTREAMCONNECT;
++        goto error;
++    }
++
++    if (test->mode == SENDER)
++    {
++        spdt_tx_params_t tx_params = {};
++
++        rc = spdt_send_start(hw_fd, &tx_params);
++        if (rc)
++        {
++            printf("spdt_send_start failed\n");
++            i_errno = IESTREAMCONNECT;
++            goto error;
++        }    
++    }
++
++    return hw_fd;
++
++error:
++    if (connected)
++        spdt_disconnect(hw_fd);
++    spdt_uninit(hw_fd);
++    return -1;
++}
++#endif
+ /* iperf_tcp_connect
+  *
+  * connect to a TCP stream listener
+diff -rupN iperf-3.8.1_orig/src/iperf_tcp.h iperf-3.8.1/src/iperf_tcp.h
+--- iperf-3.8.1_orig/src/iperf_tcp.h	2020-06-10 23:18:27.000000000 +0800
++++ iperf-3.8.1/src/iperf_tcp.h	2020-08-12 13:58:38.251212437 +0800
+@@ -59,5 +59,10 @@ int iperf_tcp_listen(struct iperf_test *
+ 
+ int iperf_tcp_connect(struct iperf_test *);
+ 
++#ifdef CONFIG_BCM_SPDTEST
++int iperf_tcp_hwoffl_connect(struct iperf_test *);
++int iperf_tcp_hwoffl_recv(struct iperf_stream *);
++int iperf_tcp_hwoffl_send(struct iperf_stream *);
++#endif
+ 
+ #endif
+diff -rupN iperf-3.8.1_orig/src/iperf_udp.c iperf-3.8.1/src/iperf_udp.c
+--- iperf-3.8.1_orig/src/iperf_udp.c	2020-06-10 23:18:27.000000000 +0800
++++ iperf-3.8.1/src/iperf_udp.c	2020-08-12 13:58:38.251212437 +0800
+@@ -55,6 +55,15 @@
+ # define PRIu64		"llu"
+ #endif
+ 
++#include "iperf_config.h"
++#include <netinet/in.h>
++#include <netdb.h>
++
++
++#ifdef CONFIG_BCM_SPDTEST
++#include "spdt_api.h"
++#endif
++
+ /* iperf_udp_recv
+  *
+  * receives the data for UDP
+@@ -582,3 +591,139 @@ iperf_udp_init(struct iperf_test *test)
+ {
+     return 0;
+ }
++
++#ifdef CONFIG_BCM_SPDTEST
++int 
++iperf_udp_hwoffl_recv(struct iperf_stream *sp)
++{
++    return 0;
++}
++
++int
++iperf_udp_hwoffl_send(struct iperf_stream *sp)
++{
++    return 0;
++}
++
++int
++iperf_udp_hwoffl_connect(struct iperf_test *test)
++{
++    uint8_t hw_fd;
++    spdt_conn_params_t params = {};
++    struct addrinfo hints, *local_res, *server_res;
++    char portstr[6];
++    int rc, connected = 0;
++    int buf;
++
++    memset(&hints, 0, sizeof(hints));
++
++    rc = spdt_init(SPDT_IPERF3_UDP, &hw_fd);
++    if (rc)
++    {
++        printf("spdt_init failed\n");
++        i_errno = IESTREAMCONNECT;
++        return -1;  
++    }
++
++    memset(&params.local_addr, 0, sizeof(params.local_addr));
++
++    if (test->bind_address) 
++    {
++        memset(&hints, 0, sizeof(hints));
++        hints.ai_family = test->settings->domain;
++        hints.ai_socktype = SOCK_DGRAM;
++        if (getaddrinfo(test->bind_address, NULL, &hints, &local_res) != 0) {
++            i_errno = IESTREAMCONNECT;
++            goto error;
++        }
++        /* convert to sockaddr_storage */
++
++        memcpy(&params.local_addr, local_res->ai_addr, local_res->ai_addrlen);
++
++        /*may free addrinfo now */
++        freeaddrinfo(local_res);
++    }
++
++    /* get server's address */
++    memset(&hints, 0, sizeof(hints));
++    hints.ai_family = test->settings->domain;
++    hints.ai_socktype = SOCK_DGRAM;
++    snprintf(portstr, sizeof(portstr), "%d", test->server_port);
++    if (getaddrinfo(test->server_hostname, portstr, &hints, &server_res) != 0) {
++        spdt_uninit(hw_fd);
++        i_errno = IESTREAMCONNECT;
++        goto error;
++    }
++
++     /* convert to sockaddr_storage */
++    memset(&params.server_addr, 0, sizeof(params.server_addr));
++    memcpy(&params.server_addr, server_res->ai_addr, server_res->ai_addrlen);
++
++    /*may free addrinfo now */
++    freeaddrinfo(server_res);
++
++    if (test->settings->tos)
++       params.tos = test->settings->tos;
++
++    /* try to connect */
++    rc = spdt_connect(hw_fd, test->mode == SENDER ? SPDT_DIR_TX: SPDT_DIR_RX, &params);
++    if (rc)
++    {
++        printf("spdt_connect failed\n");
++        i_errno = IESTREAMCONNECT;
++        goto error;
++    }
++    connected = 1;
++
++    if (!test->mode == SENDER)
++    {
++        spdt_rx_params_t rx_params = {};
++
++        rc = spdt_recv_start(hw_fd, &rx_params);
++        if (rc)
++        {
++            printf("spdt_recv_start failed\n");
++            i_errno = IESTREAMCONNECT;
++            goto error;
++        }    
++    }
++
++    /*
++     * Write a datagram to the UDP stream to let the server know we're here.
++     * The server learns our address by obtaining its peer's address.
++     */
++    buf = 123456789;		/* this can be pretty much anything */
++    rc = spdt_oob_send(hw_fd, &buf, sizeof(buf));
++    if (rc < 0)
++    {
++        printf("%s:%d Failed to send start indication to the server, rc = %d\n", __FUNCTION__, __LINE__, rc);
++        i_errno = IESTREAMWRITE;
++        goto error;
++    }
++
++    if (test->mode == SENDER)
++    {
++        spdt_tx_params_t tx_params = {};
++
++        tx_params.proto.udp.data_buf_len = test->settings->blksize;
++        tx_params.proto.udp.total_bytes_to_send = test->settings->bytes;
++        tx_params.proto.udp.kbps = (uint32_t)(test->settings->rate / 1000);
++        rc = spdt_send_start(hw_fd, &tx_params);
++        if (rc)
++        {
++            printf("spdt_send_start failed\n");
++            i_errno = IESTREAMCONNECT;
++            goto error;
++        }    
++    }
++
++    return hw_fd;
++
++error:
++    if (connected)
++        iperf_hw_disconnect_sock(test, hw_fd);
++    spdt_uninit(hw_fd);
++    return -1;
++}
++#endif
++
+diff -rupN iperf-3.8.1_orig/src/iperf_udp.h iperf-3.8.1/src/iperf_udp.h
+--- iperf-3.8.1_orig/src/iperf_udp.h	2020-06-10 23:18:27.000000000 +0800
++++ iperf-3.8.1/src/iperf_udp.h	2020-08-12 13:58:38.251212437 +0800
+@@ -60,5 +60,10 @@ int iperf_udp_connect(struct iperf_test
+ 
+ int iperf_udp_init(struct iperf_test *);
+ 
++#ifdef CONFIG_BCM_SPDTEST
++int iperf_udp_hwoffl_recv(struct iperf_stream *sp);
++int iperf_udp_hwoffl_send(struct iperf_stream *sp);
++int iperf_udp_hwoffl_connect(struct iperf_test *test);
++#endif
+ 
+ #endif
+diff -rupN iperf-3.8.1_orig/src/main.c iperf-3.8.1/src/main.c
+--- iperf-3.8.1_orig/src/main.c	2020-06-10 23:18:27.000000000 +0800
++++ iperf-3.8.1/src/main.c	2020-08-12 13:58:38.251212437 +0800
+@@ -141,21 +141,22 @@ run(struct iperf_test *test)
+ 		rc = daemon(0, 0);
+ 		if (rc < 0) {
+ 		    i_errno = IEDAEMON;
+-		    iperf_errexit(test, "error - %s", iperf_strerror(i_errno));
++                    goto error;
+ 		}
+ 	    }
+ 	    if (iperf_create_pidfile(test) < 0) {
+ 		i_errno = IEPIDFILE;
+-		iperf_errexit(test, "error - %s", iperf_strerror(i_errno));
++                goto error;
+ 	    }
+             for (;;) {
+ 		int rc;
+ 		rc = iperf_run_server(test);
+ 		if (rc < 0) {
+-		    iperf_err(test, "error - %s", iperf_strerror(i_errno));
+ 		    if (rc < -1) {
+-		        iperf_errexit(test, "exiting");
++                        goto error;
+ 		    }
++                    else
++                        iperf_err(test, "error - %s", iperf_strerror(i_errno));
+                 }
+                 iperf_reset_test(test);
+                 if (iperf_get_test_one_off(test)) {
+@@ -170,7 +171,7 @@ run(struct iperf_test *test)
+             break;
+ 	case 'c':
+ 	    if (iperf_run_client(test) < 0)
+-		iperf_errexit(test, "error - %s", iperf_strerror(i_errno));
++                goto error;
+             break;
+         default:
+             usage();
+@@ -181,4 +182,12 @@ run(struct iperf_test *test)
+     signal(SIGPIPE, SIG_DFL);
+ 
+     return 0;
++
++error:
++#ifdef CONFIG_BCM_SPDTEST
++    if (test->hwoffl)
++        iperf_hw_uninit(test);
++#endif
++    iperf_errexit(test, "error - %s", iperf_strerror(i_errno));
++    return -1;
+ }
+--- orig_iperf-3.8.1/src/iperf_client_api.c	2020-10-18 12:23:11.738311188 +0300
++++ iperf-3.8.1/src/iperf_client_api.c	2020-10-18 12:42:35.097982302 +0300
+@@ -51,6 +51,8 @@
+ #endif /* TCP_CA_NAME_MAX */
+ #endif /* HAVE_TCP_CONGESTION */
+ 
++#define SAFE_TCP_MSS 1448
++
+ int
+ iperf_create_streams(struct iperf_test *test, int sender)
+ {
+@@ -365,11 +367,12 @@ iperf_connect(struct iperf_test *test)
+ 
+     len = sizeof(opt);
+     if (getsockopt(test->ctrl_sck, IPPROTO_TCP, TCP_MAXSEG, &opt, &len) < 0) {
+-        test->ctrl_sck_mss = 0;
++        test->ctrl_sck_mss = test->settings->mss ?: SAFE_TCP_MSS;
+     }
+     else {
+-        if (opt > 0 && opt <= MAX_UDP_BLOCKSIZE) {
++        if (opt > 0 && opt <= SAFE_TCP_MSS) {
+             test->ctrl_sck_mss = opt;
++            test->settings->mss = test->settings->mss ?: opt;
+         }
+         else {
+             char str[128];
+@@ -378,11 +381,13 @@ iperf_connect(struct iperf_test *test)
+             warning(str);
+ 
+             test->ctrl_sck_mss = 0;
++            test->settings->mss = test->settings->mss ?: SAFE_TCP_MSS;
+         }
+     }
+ 
+     if (test->verbose) {
+ 	printf("Control connection MSS %d\n", test->ctrl_sck_mss);
++        printf("Data connection MSS %d\n", test->settings->mss);
+     }
+ 
+     /*

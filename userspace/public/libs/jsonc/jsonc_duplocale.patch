@@ -1,0 +1,33 @@
+diff --git a/jsonc/json_tokener.c b/jsonc/json_tokener.c
+index 449a82d..c0d1401 100644
+--- a/jsonc/json_tokener.c
++++ b/jsonc/json_tokener.c
+@@ -243,7 +243,7 @@ struct json_object* json_tokener_parse_ex(struct json_tokener *tok,
+   char c = '\1';
+ #ifdef HAVE_USELOCALE
+   locale_t oldlocale = uselocale(NULL);
+-  locale_t newloc;
++  locale_t newloc = NULL;
+ #elif defined(HAVE_SETLOCALE)
+   char *oldlocale = NULL;
+ #endif
+@@ -262,6 +262,9 @@ struct json_object* json_tokener_parse_ex(struct json_tokener *tok,
+   }
+ 
+ #ifdef HAVE_USELOCALE
++#ifdef __UCLIBC__
++    if(oldlocale!=LC_GLOBAL_LOCALE)
++#endif
+   {
+     locale_t duploc = duplocale(oldlocale);
+     newloc = newlocale(LC_NUMERIC, "C", duploc);
+@@ -969,7 +972,8 @@ struct json_object* json_tokener_parse_ex(struct json_tokener *tok,
+ 
+ #ifdef HAVE_USELOCALE
+   uselocale(oldlocale);
+-  freelocale(newloc); 
++  if(newloc)
++      freelocale(newloc); 
+ #elif defined(HAVE_SETLOCALE)
+   setlocale(LC_NUMERIC, oldlocale);
+   free(oldlocale);

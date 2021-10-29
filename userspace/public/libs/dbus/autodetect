@@ -1,0 +1,3 @@
+condition: ifneq ($(strip $(BUILD_DBUS)),)
+dependson: public/libs/expat
+

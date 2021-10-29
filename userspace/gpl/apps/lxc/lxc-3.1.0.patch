@@ -1,0 +1,258 @@
+diff -Naur org_lxc-3.1.0/config/apparmor/Makefile.am lxc-3.1.0/config/apparmor/Makefile.am
+--- org_lxc-3.1.0/config/apparmor/Makefile.am	2018-12-13 15:13:51.000000000 -0800
++++ lxc-3.1.0/config/apparmor/Makefile.am	2020-08-20 12:48:47.167131850 -0700
+@@ -15,30 +15,30 @@
+ 
+ if ENABLE_APPARMOR
+ install-apparmor:
+-	$(MKDIR_P) $(DESTDIR)$(sysconfdir)/apparmor.d/
+-	$(MKDIR_P) $(DESTDIR)$(sysconfdir)/apparmor.d/abstractions/lxc/
+-	$(MKDIR_P) $(DESTDIR)$(sysconfdir)/apparmor.d/lxc/
+-	$(INSTALL_DATA) $(srcdir)/abstractions/container-base $(DESTDIR)$(sysconfdir)/apparmor.d/abstractions/lxc/
+-	$(INSTALL_DATA) abstractions/start-container $(DESTDIR)$(sysconfdir)/apparmor.d/abstractions/lxc/
+-	$(INSTALL_DATA) $(srcdir)/profiles/lxc-default $(DESTDIR)$(sysconfdir)/apparmor.d/lxc/
+-	$(INSTALL_DATA) $(srcdir)/profiles/lxc-default-cgns $(DESTDIR)$(sysconfdir)/apparmor.d/lxc/
+-	$(INSTALL_DATA) $(srcdir)/profiles/lxc-default-with-mounting $(DESTDIR)$(sysconfdir)/apparmor.d/lxc/
+-	$(INSTALL_DATA) $(srcdir)/profiles/lxc-default-with-nesting $(DESTDIR)$(sysconfdir)/apparmor.d/lxc/
+-	$(INSTALL_DATA) $(srcdir)/lxc-containers $(DESTDIR)$(sysconfdir)/apparmor.d/
+-	$(INSTALL_DATA) $(srcdir)/usr.bin.lxc-start $(DESTDIR)$(sysconfdir)/apparmor.d/
++	$(MKDIR_P) $(DESTDIR)$(sysconfdir)/lxcapparmor.d/
++	$(MKDIR_P) $(DESTDIR)$(sysconfdir)/lxcapparmor.d/abstractions/lxc/
++	$(MKDIR_P) $(DESTDIR)$(sysconfdir)/lxcapparmor.d/lxc/
++	$(INSTALL_DATA) $(srcdir)/abstractions/container-base $(DESTDIR)$(sysconfdir)/lxcapparmor.d/abstractions/lxc/
++	$(INSTALL_DATA) abstractions/start-container $(DESTDIR)$(sysconfdir)/lxcapparmor.d/abstractions/lxc/
++	$(INSTALL_DATA) $(srcdir)/profiles/lxc-default $(DESTDIR)$(sysconfdir)/lxcapparmor.d/lxc/
++	$(INSTALL_DATA) $(srcdir)/profiles/lxc-default-cgns $(DESTDIR)$(sysconfdir)/lxcapparmor.d/lxc/
++	$(INSTALL_DATA) $(srcdir)/profiles/lxc-default-with-mounting $(DESTDIR)$(sysconfdir)/lxcapparmor.d/lxc/
++	$(INSTALL_DATA) $(srcdir)/profiles/lxc-default-with-nesting $(DESTDIR)$(sysconfdir)/lxcapparmor.d/lxc/
++	$(INSTALL_DATA) $(srcdir)/lxc-containers $(DESTDIR)$(sysconfdir)/lxcapparmor.d/
++	$(INSTALL_DATA) $(srcdir)/usr.bin.lxc-start $(DESTDIR)$(sysconfdir)/lxcapparmor.d/
+ 
+ uninstall-apparmor:
+-	rm -f $(DESTDIR)$(sysconfdir)/apparmor.d/usr.bin.lxc-start
+-	rm -f $(DESTDIR)$(sysconfdir)/apparmor.d/lxc-containers
+-	rm -f $(DESTDIR)$(sysconfdir)/apparmor.d/lxc/lxc-default-with-nesting
+-	rm -f $(DESTDIR)$(sysconfdir)/apparmor.d/lxc/lxc-default-with-mounting
+-	rm -f $(DESTDIR)$(sysconfdir)/apparmor.d/lxc/lxc-default-cgns
+-	rm -f $(DESTDIR)$(sysconfdir)/apparmor.d/lxc/lxc-default
+-	rm -f $(DESTDIR)$(sysconfdir)/apparmor.d/abstractions/lxc/start-container
+-	rm -f $(DESTDIR)$(sysconfdir)/apparmor.d/abstractions/lxc/container-base
+-	rmdir $(DESTDIR)$(sysconfdir)/apparmor.d/lxc/ || :
+-	rmdir $(DESTDIR)$(sysconfdir)/apparmor.d/abstractions/lxc/ || :
+-	rmdir $(DESTDIR)$(sysconfdir)/apparmor.d/ || :
++	rm -f $(DESTDIR)$(sysconfdir)/lxcapparmor.d/usr.bin.lxc-start
++	rm -f $(DESTDIR)$(sysconfdir)/lxcapparmor.d/lxc-containers
++	rm -f $(DESTDIR)$(sysconfdir)/lxcapparmor.d/lxc/lxc-default-with-nesting
++	rm -f $(DESTDIR)$(sysconfdir)/lxcapparmor.d/lxc/lxc-default-with-mounting
++	rm -f $(DESTDIR)$(sysconfdir)/lxcapparmor.d/lxc/lxc-default-cgns
++	rm -f $(DESTDIR)$(sysconfdir)/lxcapparmor.d/lxc/lxc-default
++	rm -f $(DESTDIR)$(sysconfdir)/lxcapparmor.d/abstractions/lxc/start-container
++	rm -f $(DESTDIR)$(sysconfdir)/lxcapparmor.d/abstractions/lxc/container-base
++	rmdir $(DESTDIR)$(sysconfdir)/lxcapparmor.d/lxc/ || :
++	rmdir $(DESTDIR)$(sysconfdir)/lxcapparmor.d/abstractions/lxc/ || :
++	rmdir $(DESTDIR)$(sysconfdir)/lxcapparmor.d/ || :
+ 
+ install-data-local: install-apparmor
+ uninstall-local: uninstall-apparmor
+diff -Naur org_lxc-3.1.0/src/lxc/attach.c lxc-3.1.0/src/lxc/attach.c
+--- org_lxc-3.1.0/src/lxc/attach.c	2018-12-13 15:13:51.000000000 -0800
++++ lxc-3.1.0/src/lxc/attach.c	2020-08-20 12:47:07.521498141 -0700
+@@ -1484,7 +1484,8 @@
+ 	}
+ 
+ 	if (pid == 0) {
+-		if (options->attach_flags & LXC_ATTACH_TERMINAL) {
++		if ((options->attach_flags & LXC_ATTACH_TERMINAL) &&
++		    terminal.tty_state != NULL) {
+ 			ret = pthread_sigmask(SIG_SETMASK,
+ 					      &terminal.tty_state->oldmask, NULL);
+ 			if (ret < 0) {
+diff -Naur org_lxc-3.1.0/src/lxc/cgroups/cgfsng.c lxc-3.1.0/src/lxc/cgroups/cgfsng.c
+--- org_lxc-3.1.0/src/lxc/cgroups/cgfsng.c	2018-12-13 15:13:51.000000000 -0800
++++ lxc-3.1.0/src/lxc/cgroups/cgfsng.c	2020-08-20 12:47:07.521498141 -0700
+@@ -2400,6 +2400,16 @@
+ 		cg = iterator->elem;
+ 
+ 		if (do_devices == !strncmp("devices", cg->subsystem, 7)) {
++#ifdef BUILD_DESKTOP_BEEP
++			if (strncmp(cg->subsystem, "blkio", strlen("blkio")) == 0)
++				continue;
++            if (strncmp(cg->subsystem, "cpu.rt_runtime_us", strlen("cpu.rt_runtime_us")) == 0)
++                continue;
++            if (strncmp(cg->subsystem, "cpu.rt_period_us", strlen("cpu.rt_period_us")) == 0)
++                continue;
++            if (strncmp(cg->subsystem, "cpuset.cpus", strlen("cpuset.cpus")) == 0)
++                continue;
++#endif
+ 			if (cg_legacy_set_data(ops, cg->subsystem, cg->value)) {
+ 				if (do_devices && (errno == EACCES || errno == EPERM)) {
+ 					WARN("Failed to set \"%s\" to \"%s\"",
+diff -Naur org_lxc-3.1.0/src/lxc/conf.c lxc-3.1.0/src/lxc/conf.c
+--- org_lxc-3.1.0/src/lxc/conf.c	2018-12-13 15:13:51.000000000 -0800
++++ lxc-3.1.0/src/lxc/conf.c	2020-08-20 12:47:07.521498141 -0700
+@@ -83,6 +83,10 @@
+ #include <sys/mkdev.h>
+ #endif
+ 
++#ifdef MAJOR_IN_SYSMACROS
++#include <sys/sysmacros.h>
++#endif
++
+ #ifdef HAVE_STATVFS
+ #include <sys/statvfs.h>
+ #endif
+@@ -3533,11 +3537,15 @@
+ 
+ static bool execveat_supported(void)
+ {
++#if 0
+ 	lxc_raw_execveat(-1, "", NULL, NULL, AT_EMPTY_PATH);
+ 	if (errno == ENOSYS)
+ 		return false;
+ 
+ 	return true;
++#else
++	return false;
++#endif
+ }
+ 
+ int lxc_setup(struct lxc_handler *handler)
+diff -Naur org_lxc-3.1.0/src/lxc/lxccontainer.c lxc-3.1.0/src/lxc/lxccontainer.c
+--- org_lxc-3.1.0/src/lxc/lxccontainer.c	2018-12-13 15:13:51.000000000 -0800
++++ lxc-3.1.0/src/lxc/lxccontainer.c	2020-08-20 12:47:07.521498141 -0700
+@@ -83,6 +83,10 @@
+ #include <sys/mkdev.h>
+ #endif
+ 
++#ifdef MAJOR_IN_SYSMACROS
++#include <sys/sysmacros.h>
++#endif
++
+ #if IS_BIONIC
+ #include <../include/lxcmntent.h>
+ #else
+diff -Naur org_lxc-3.1.0/src/lxc/seccomp.c lxc-3.1.0/src/lxc/seccomp.c
+--- org_lxc-3.1.0/src/lxc/seccomp.c	2018-12-13 15:13:51.000000000 -0800
++++ lxc-3.1.0/src/lxc/seccomp.c	2020-08-20 12:47:07.521498141 -0700
+@@ -542,9 +542,13 @@
+ 					   rule->args_num, arg_cmp);
+ 	if (ret < 0) {
+ 		errno = -ret;
+-		SYSERROR("Failed loading rule for %s (nr %d action %d (%s))",
+-		         line, nr, rule->action, get_action_name(rule->action));
+-		return false;
++		if (errno != EDOM) {
++			SYSERROR("Failed loading rule for %s (nr %d action %d (%s))",
++					 line, nr, rule->action, get_action_name(rule->action));
++			return false;
++		}
++		else
++			WARN("Rule for %s, syscall number %d: %s)", line, nr, strerror(errno));
+ 	}
+ 
+ 	return true;
+diff -Naur org_lxc-3.1.0/src/lxc/storage/lvm.c lxc-3.1.0/src/lxc/storage/lvm.c
+--- org_lxc-3.1.0/src/lxc/storage/lvm.c	2018-12-13 15:13:51.000000000 -0800
++++ lxc-3.1.0/src/lxc/storage/lvm.c	2020-08-20 12:47:07.517498076 -0700
+@@ -46,6 +46,10 @@
+ #include <sys/mkdev.h>
+ #endif
+ 
++#ifdef MAJOR_IN_SYSMACROS
++#include <sys/sysmacros.h>
++#endif
++
+ lxc_log_define(lvm, lxc);
+ 
+ struct lvcreate_args {
+diff -Naur org_lxc-3.1.0/src/lxc/tools/lxc_monitor.c lxc-3.1.0/src/lxc/tools/lxc_monitor.c
+--- org_lxc-3.1.0/src/lxc/tools/lxc_monitor.c	2018-12-13 15:13:51.000000000 -0800
++++ lxc-3.1.0/src/lxc/tools/lxc_monitor.c	2020-08-20 12:47:07.521498141 -0700
+@@ -54,6 +54,7 @@
+ #include "monitor.h"
+ #include "state.h"
+ #include "utils.h"
++#include "beep.h"
+ 
+ #define LXC_MONITORD_PATH LIBEXECDIR "/lxc/lxc-monitord"
+ 
+@@ -239,6 +240,43 @@
+ 	_exit(EXIT_FAILURE);
+ }
+ 
++static void sendLxcStateMsg(const char *name, lxc_state_t state)
++{
++	unsigned char *buf;
++	LxcStatusMsgBody msg;
++	int fd,rc=0;
++	struct sockaddr_un addr;
++
++	if ( (fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
++	{
++		ERROR("socket error");
++		return;
++	}
++
++	memset(&addr, 0, sizeof(addr));
++	addr.sun_family = AF_UNIX;
++	strncpy(addr.sun_path, SPD_MESSAGE_ADDR, sizeof(addr.sun_path)-1);
++
++	if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1)
++	{
++		ERROR("connect error");
++		close(fd);
++		return;
++	}
++
++	memcpy(&msg.name[0], name, BEEP_CONTNAME_LEN_MAX);
++	msg.state = state;
++	buf = (unsigned char *) &msg;
++	if ((rc = write(fd, buf, sizeof(LxcStatusMsgBody))) < 0)
++	{
++		ERROR("write error\n");
++		close(fd);
++		return;
++	}
++
++	close(fd);
++}
++
+ int main(int argc, char *argv[])
+ {
+ 	char *regexp;
+@@ -347,12 +385,14 @@
+ 
+ 		switch (msg.type) {
+ 		case lxc_msg_state:
+-			printf("'%s' changed state to [%s]\n",
+-			       msg.name, lxc_state2str(msg.value));
++			sendLxcStateMsg(msg.name, msg.value);
++//			printf("'%s' changed state to [%s]\n",
++//			       msg.name, lxc_state2str(msg.value));
+ 			break;
+ 		case lxc_msg_exit_code:
+-			printf("'%s' exited with status [%d]\n",
+-			       msg.name, WEXITSTATUS(msg.value));
++//			sendLxcStateMsg(msg.name, msg.value);
++//			printf("'%s' exited with status [%d]\n",
++//			       msg.name, WEXITSTATUS(msg.value));
+ 			break;
+ 		default:
+ 			/* ignore garbage */
+diff -Naur org_lxc-3.1.0/src/lxc/tools/lxc_unshare.c lxc-3.1.0/src/lxc/tools/lxc_unshare.c
+--- org_lxc-3.1.0/src/lxc/tools/lxc_unshare.c	2018-12-13 15:13:51.000000000 -0800
++++ lxc-3.1.0/src/lxc/tools/lxc_unshare.c	2020-08-20 12:47:07.521498141 -0700
+@@ -238,9 +238,12 @@
+ {
+ 	/* the umount may fail */
+ 	if (umount(target) < 0)
++		WARN("failed to unmount %s : %s", target, strerror(errno));
+ 
+-	if (mount(source, target, type, 0, NULL) < 0)
++	if (mount(source, target, type, 0, NULL) < 0) {
++		WARN("failed to mount %s : %s", target, strerror(errno));
+ 		return -1;
++	}
+ 
+ 	return 0;
+ }
