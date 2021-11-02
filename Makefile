@@ -9,7 +9,7 @@ NUM_CORES := $(shell grep processor /proc/cpuinfo | wc -l)
 ACTUAL_MAX_JOBS := $(NUM_CORES)
 endif
 
-# Since tms driver is called with -j1 and will call its sub-make with -j, 
+# Since tms driver is called with -j1 and will call its sub-make with -j,
 # We want it to use this value. Although the jobserver is disabled for tms,
 # at least tms is compiled with no more than this variable value jobs.
 export ACTUAL_MAX_JOBS
@@ -17,30 +17,25 @@ export ACTUAL_MAX_JOBS
 FXCN_FW_FEATURES := 1
 export FXCN_FW_FEATURES
 
+PROFILE:=RAX220
+export PROFILE
+
 default:
-ifeq ($(FXCN_FW_FEATURES),1) 
-ifeq ($(PROFILE),RAX220)
-	tar zxvf ori_RAX220_prebuild.tar.gz -C targets/RAX220/
-	tar zxvf ori_RAX220_prebuild.tar.gz -C RAX220/
-endif
+	mkdir -p targets/$(PROFILE)/
+	cp -ralf prebuilt/* targets/$(PROFILE)/
+	mkdir -p $(PROFILE)/
+	cp -ralf prebuilt/* $(PROFILE)/
 #	./sdk_link.sh $(PROFILE)
-endif
 	$(MAKE) -f build/Makefile -j$(ACTUAL_MAX_JOBS) $(MAKEOVERRIDES) $(MAKECMDGOALS)
-ifeq ($(FXCN_FW_FEATURES),1) 
-	$(MAKE) -f build/Makefile -j$(ACTUAL_MAX_JOBS) pre_buildimage 
-	$(MAKE) -f build/Makefile gpl 
-	$(MAKE) -f build/Makefile acos 
-ifeq ($(PROFILE),RAX220)
-	rm -rf targets/RAX220/fs.install targets/RAX220/modules;
-	tar zxvf ori_RAX220_prebuild.tar.gz  -C targets/RAX220/
-endif
-	$(MAKE) -f build/Makefile -j$(ACTUAL_MAX_JOBS) just_buildimage 
-endif #FXCN_FW_FEATURES
+	$(MAKE) -f build/Makefile -j$(ACTUAL_MAX_JOBS) pre_buildimage
+	$(MAKE) -f build/Makefile gpl
+	$(MAKE) -f build/Makefile acos
+	rm -rf targets/$(PROFILE)/fs.install targets/$(PROFILE)/modules;
+	cp -ralr prebuilt/* targets/$(PROFILE)/
+	$(MAKE) -f build/Makefile -j$(ACTUAL_MAX_JOBS) just_buildimage
 
 $(MAKECMDGOALS):
 	$(MAKE) -f build/Makefile -j$(ACTUAL_MAX_JOBS) $(MAKEOVERRIDES) $(MAKECMDGOALS)
-
-
 
 .PHONY: $(MAKECMDGOALS)
 

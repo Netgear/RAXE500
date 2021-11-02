@@ -1,0 +1,6 @@
+*.a
+*.cmd
+*.o
+*.po
+*.tmp
+objs/
