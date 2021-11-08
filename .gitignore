@@ -4,3 +4,5 @@
 *.po
 *.tmp
 objs/
+.deps/
+.dirstamp

@@ -20,18 +20,19 @@ export FXCN_FW_FEATURES
 PROFILE:=RAX220
 export PROFILE
 
+export V
+
 default:
-	mkdir -p targets/$(PROFILE)/
+	mkdir -p $(PROFILE) targets/$(PROFILE)/
 	cp -ralf prebuilt/* targets/$(PROFILE)/
-	mkdir -p $(PROFILE)/
 	cp -ralf prebuilt/* $(PROFILE)/
 #	./sdk_link.sh $(PROFILE)
 	$(MAKE) -f build/Makefile -j$(ACTUAL_MAX_JOBS) $(MAKEOVERRIDES) $(MAKECMDGOALS)
 	$(MAKE) -f build/Makefile -j$(ACTUAL_MAX_JOBS) pre_buildimage
 	$(MAKE) -f build/Makefile gpl
 	$(MAKE) -f build/Makefile acos
-	rm -rf targets/$(PROFILE)/fs.install targets/$(PROFILE)/modules;
-	cp -ralr prebuilt/* targets/$(PROFILE)/
+#	rm -rf targets/$(PROFILE)/fs.install targets/$(PROFILE)/modules
+#	cp -ralf prebuilt/* targets/$(PROFILE)/
 	$(MAKE) -f build/Makefile -j$(ACTUAL_MAX_JOBS) just_buildimage
 
 $(MAKECMDGOALS):
