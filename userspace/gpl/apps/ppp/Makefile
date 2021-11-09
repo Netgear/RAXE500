@@ -39,9 +39,9 @@ check_untar_patch_configure: sanity_check
 
 conditional_build: check_untar_patch_configure
 ifneq ($(strip $(BUILD_BRCM_CMS))$(strip $(BUILD_BRCM_BDK)),)
-	$(MAKE) -C $(CURR_DIR)/$(APPDIR)/pppd install
+	$(MAKE) --directory $(CURR_DIR)/$(APPDIR)/pppd --makefile Makefile.linux install
 ifeq ($(strip $(DESKTOP_LINUX)),)
-	$(MAKE) -C $(CURR_DIR)/$(APPDIR)/pppd/plugins install
+	$(MAKE) --directory $(CURR_DIR)/$(APPDIR)/pppd/plugins --makefile Makefile.linux install
 endif
 endif
 else
