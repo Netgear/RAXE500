@@ -35,7 +35,7 @@ clean:
 ifneq ($(strip $(BUILD_PPPD)),)
 
 check_untar_patch_configure: sanity_check
-	    (tar zxkf $(APPSOURCE) 2> /dev/null || true)
+	tar -xz --skip-old-files -f $(APPSOURCE)
 
 conditional_build: check_untar_patch_configure
 ifneq ($(strip $(BUILD_BRCM_CMS))$(strip $(BUILD_BRCM_BDK)),)
